@@ -9,8 +9,7 @@ import {
 import {
   getPresupuesto, setPresupuesto, getArrastres, cerrarMes,
   getTransacciones, addTransaccion, updateTransaccionCat, deleteTransaccion,
-  getSaldo, setSaldo,
-  getMovimientos, addMovimiento
+  getSaldosCuentas, setSaldoInicial, reconciliar, CUENTAS_DEFAULT,
 } from './db'
 import Settings from './Settings.jsx'
 import { supabase } from './supabase'
@@ -118,12 +117,13 @@ export default function App({ session, onSignOut }) {
   const [currentMonth, setCurrentMonth] = useState(getMonthKey())
   const [presupuesto, setPresupuestoState] = useState({})
   const [transacciones, setTransacciones] = useState([])
-  const [saldo, setSaldoState] = useState({ saldo_real: 0, saldo_fecha: null })
+  const [cuentas, setCuentasState] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('presupuesto')
   const [notif, setNotif] = useState('')
   const [collapsedGroups, setCollapsedGroups] = useState(new Set())
   const [showSettings, setShowSettings] = useState(false)
+  const [showReconciliar, setShowReconciliar] = useState(false)
   const [arrastres, setArrastres] = useState({})
 
   // Dynamic categories from Supabase (fallback to static while loading)
@@ -132,16 +132,18 @@ export default function App({ session, onSignOut }) {
   const [catsIngreso, setCatsIngreso] = useState(CATS_INGRESO_DEFAULT)
 
   // Modals
-  const [modalSaldo, setModalSaldo] = useState(false)
+  const [modalCuenta, setModalCuenta] = useState(false)
   const [modalIngreso, setModalIngreso] = useState(false)
   const [modalGasto, setModalGasto] = useState(false)
   const [modalMover, setModalMover] = useState(false)
+  const [modalReconciliar, setModalReconciliar] = useState(false)
 
   // Form state
-  const [formSaldo, setFormSaldo] = useState({ monto: '', fecha: new Date().toISOString().split('T')[0] })
-  const [formIngreso, setFormIngreso] = useState({ fecha: '', concepto: '', monto: '', categoria: 'VentasDirectas' })
-  const [formGasto, setFormGasto] = useState({ fecha: '', concepto: '', monto: '', categoria: 'Viniles' })
+  const [formCuenta, setFormCuenta] = useState({ nombre: 'Banorte', monto: '' })
+  const [formIngreso, setFormIngreso] = useState({ fecha: '', concepto: '', monto: '', categoria: 'VentasDirectas', cuenta: 'Banorte' })
+  const [formGasto, setFormGasto] = useState({ fecha: '', concepto: '', monto: '', categoria: 'Viniles', cuenta: 'Banorte' })
   const [formMover, setFormMover] = useState({ desde: '', hacia: '', monto: '' })
+  const [formReconciliar, setFormReconciliar] = useState({ nombre: 'Banorte', saldoReal: '' })
 
   const notify = (msg) => setNotif(msg)
 
@@ -164,16 +166,16 @@ export default function App({ session, onSignOut }) {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [pres, txs, sal, arr] = await Promise.all([
+      const [pres, txs, arr, cts] = await Promise.all([
         getPresupuesto(currentMonth),
         getTransacciones(currentMonth),
-        getSaldo(currentMonth),
         getArrastres(currentMonth),
+        getSaldosCuentas(currentMonth),
       ])
       setPresupuestoState(pres)
       setTransacciones(txs)
-      setSaldoState(sal)
       setArrastres(arr)
+      setCuentasState(cts)
     } catch (e) {
       notify('Error cargando datos: ' + e.message)
     }
@@ -198,8 +200,11 @@ export default function App({ session, onSignOut }) {
   const totalPresupuestado = Object.values(presupuesto).reduce((a, b) => a + b, 0)
   const resultado = totalIngresos - totalGastos
   const margen = totalIngresos > 0 ? (resultado / totalIngresos * 100).toFixed(1) : 0
-  const saldoReal = saldo.saldo_real || 0
-  const paraAsignar = saldoReal - totalPresupuestado
+
+  // Saldo neto = débito - crédito
+  const saldoNeto = cuentas.reduce((s, c) => c.tipo === 'credito' ? s - Math.abs(c.saldoActual) : s + c.saldoActual, 0)
+  const paraAsignar = saldoNeto - totalPresupuestado
+
   const overspendCats = catsGasto.filter(c => {
     const real = gastoActual[c.id] || 0
     const pres = presupuesto[c.id] || 0
@@ -259,14 +264,14 @@ export default function App({ session, onSignOut }) {
     e.target.value = ''
   }
 
-  const handleSaveSaldo = async () => {
-    const monto = parseFmt(formSaldo.monto)
-    if (isNaN(monto) || monto < 0) { notify('⚠️ Ingresa un saldo válido'); return }
+  const handleSaveCuenta = async () => {
+    const monto = parseFmt(formCuenta.monto)
+    if (isNaN(monto)) { notify('⚠️ Ingresa un saldo válido'); return }
     try {
-      await setSaldo(currentMonth, monto, formSaldo.fecha)
-      setSaldoState({ saldo_real: monto, saldo_fecha: formSaldo.fecha })
-      setModalSaldo(false)
-      notify(`✓ Saldo actualizado: ${fmt(monto)}`)
+      await setSaldoInicial(currentMonth, formCuenta.nombre, monto)
+      setModalCuenta(false)
+      notify(`✓ Saldo de ${formCuenta.nombre} actualizado: ${fmt(monto)}`)
+      await loadData()
     } catch (e) { notify('Error: ' + e.message) }
   }
 
@@ -274,7 +279,7 @@ export default function App({ session, onSignOut }) {
     const monto = parseFloat(formIngreso.monto)
     if (!formIngreso.fecha || !formIngreso.concepto || !monto) { notify('⚠️ Completa todos los campos'); return }
     try {
-      await addTransaccion({ mes: formIngreso.fecha.substring(0, 7), fecha: formIngreso.fecha, concepto: formIngreso.concepto, monto, tipo: 'ingreso', categoria: formIngreso.categoria })
+      await addTransaccion({ mes: formIngreso.fecha.substring(0, 7), fecha: formIngreso.fecha, concepto: formIngreso.concepto, monto, tipo: 'ingreso', categoria: formIngreso.categoria, cuenta: formIngreso.cuenta })
       setModalIngreso(false)
       notify('✓ Ingreso registrado')
       await loadData()
@@ -285,9 +290,24 @@ export default function App({ session, onSignOut }) {
     const monto = parseFloat(formGasto.monto)
     if (!formGasto.fecha || !formGasto.concepto || !monto) { notify('⚠️ Completa todos los campos'); return }
     try {
-      await addTransaccion({ mes: formGasto.fecha.substring(0, 7), fecha: formGasto.fecha, concepto: formGasto.concepto, monto, tipo: 'gasto', categoria: formGasto.categoria })
+      await addTransaccion({ mes: formGasto.fecha.substring(0, 7), fecha: formGasto.fecha, concepto: formGasto.concepto, monto, tipo: 'gasto', categoria: formGasto.categoria, cuenta: formGasto.cuenta })
       setModalGasto(false)
       notify('✓ Gasto registrado')
+      await loadData()
+    } catch (e) { notify('Error: ' + e.message) }
+  }
+
+  const handleReconciliar = async () => {
+    const saldoReal = parseFmt(formReconciliar.saldoReal)
+    if (isNaN(saldoReal)) { notify('⚠️ Ingresa el saldo real'); return }
+    try {
+      const diferencia = await reconciliar(currentMonth, formReconciliar.nombre, saldoReal)
+      setModalReconciliar(false)
+      if (Math.abs(diferencia) < 0.01) {
+        notify(`✅ ${formReconciliar.nombre} cuadra perfectamente`)
+      } else {
+        notify(`✓ Reconciliado — diferencia de ${fmt(Math.abs(diferencia))} ajustada`)
+      }
       await loadData()
     } catch (e) { notify('Error: ' + e.message) }
   }
@@ -402,47 +422,70 @@ export default function App({ session, onSignOut }) {
         {activeTab === 'presupuesto' && (
           <>
             {/* SUMMARY CARDS */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
-              {[
-                { label: 'Ingresos del mes', value: fmt(totalIngresos), sub: `${transacciones.filter(t => t.tipo === 'ingreso').length} transacciones`, color: '#059669', border: '#059669' },
-                { label: 'Gastos del mes', value: fmt(totalGastos), sub: `${Object.keys(gastoActual).length} categorías activas`, color: '#dc2626', border: '#dc2626' },
-                { label: 'Resultado', value: fmt(resultado), sub: `margen ${margen}%`, color: resultado >= 0 ? '#059669' : '#dc2626', border: '#7c3aed' },
-              ].map((c, i) => (
-                <div key={i} style={{ background: '#fff', border: '1px solid #e0e7ff', borderTop: `3px solid ${c.border}`, borderRadius: 10, padding: '16px 18px' }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>{c.label}</div>
-                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 22, fontWeight: 500, color: c.color }}>{c.value}</div>
-                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4, fontFamily: 'DM Mono, monospace' }}>{c.sub}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 16 }}>
+              <div style={{ background: '#fff', border: '1px solid #e0e7ff', borderTop: '3px solid #059669', borderRadius: 10, padding: '16px 18px' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Ingresos del mes</div>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 22, fontWeight: 500, color: '#059669' }}>{fmt(totalIngresos)}</div>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{transacciones.filter(t => t.tipo === 'ingreso').length} transacciones</div>
+              </div>
+              <div style={{ background: '#fff', border: '1px solid #e0e7ff', borderTop: '3px solid #dc2626', borderRadius: 10, padding: '16px 18px' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Gastos del mes</div>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 22, fontWeight: 500, color: '#dc2626' }}>{fmt(totalGastos)}</div>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{Object.keys(gastoActual).length} categorías activas</div>
+              </div>
+              <div style={{ background: '#fff', border: '1px solid #e0e7ff', borderTop: '3px solid #7c3aed', borderRadius: 10, padding: '16px 18px' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Resultado</div>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 22, fontWeight: 500, color: resultado >= 0 ? '#059669' : '#dc2626' }}>{fmt(resultado)}</div>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>margen {margen}%</div>
+              </div>
+              <div style={{ background: '#fff', border: '1px solid #e0e7ff', borderTop: '3px solid #2563eb', borderRadius: 10, padding: '16px 18px' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Saldo neto</div>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 22, fontWeight: 500, color: saldoNeto >= 0 ? '#2563eb' : '#dc2626' }}>{saldoNeto < 0 ? '-' : ''}{fmt(Math.abs(saldoNeto))}</div>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>débito - crédito</div>
+              </div>
+            </div>
+
+            {/* CUENTAS */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 16 }}>
+              {cuentas.map(c => (
+                <div key={c.nombre} style={{ background: '#fff', border: '1px solid #e0e7ff', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
+                      {c.tipo === 'credito' ? '💳' : '🏦'} {c.nombre}
+                    </div>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, fontWeight: 700, color: c.tipo === 'credito' ? '#dc2626' : '#059669' }}>
+                      {c.tipo === 'credito' && c.saldoActual < 0 ? '-' : ''}{fmt(Math.abs(c.saldoActual))}
+                    </div>
+                    {c.saldo_inicial === 0 && c.tipo === 'debito' && (
+                      <div style={{ fontSize: 10, color: '#f97316', marginTop: 2 }}>⚠️ Ingresa saldo inicial</div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <button onClick={() => { setFormCuenta({ nombre: c.nombre, monto: c.saldo_inicial || '' }); setModalCuenta(true) }}
+                      style={{ padding: '4px 8px', borderRadius: 5, fontSize: 11, cursor: 'pointer', background: 'none', border: '1px solid #c7d2fe', color: '#475569' }}>✎ Inicial</button>
+                    <button onClick={() => { setFormReconciliar({ nombre: c.nombre, saldoReal: '' }); setModalReconciliar(true) }}
+                      style={{ padding: '4px 8px', borderRadius: 5, fontSize: 11, cursor: 'pointer', background: 'none', border: '1px solid #c7d2fe', color: '#475569' }}>⚖️ Rec.</button>
+                  </div>
                 </div>
               ))}
-              <div onClick={() => { setFormSaldo({ monto: saldoReal || '', fecha: new Date().toISOString().split('T')[0] }); setModalSaldo(true) }}
-                style={{ background: '#fff', border: '1px solid #e0e7ff', borderTop: '3px solid #2563eb', borderRadius: 10, padding: '16px 18px', cursor: 'pointer' }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
-                  Saldo real Banorte <span style={{ color: '#4f46e5' }}>✎</span>
-                </div>
-                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 22, fontWeight: 500, color: '#2563eb' }}>{fmt(saldoReal)}</div>
-                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4, fontFamily: 'DM Mono, monospace' }}>
-                  {saldo.saldo_fecha ? `actualizado ${saldo.saldo_fecha.split('-').reverse().join('/')}` : 'toca para actualizar'}
-                </div>
-              </div>
             </div>
 
             {/* BANNER LISTO PARA ASIGNAR */}
             <div style={{
-              background: saldoReal === 0 ? '#fff' : 'linear-gradient(135deg,#4f46e5,#7c3aed)',
-              border: saldoReal === 0 ? '1px solid #c7d2fe' : 'none',
+              background: saldoNeto === 0 ? '#fff' : 'linear-gradient(135deg,#4f46e5,#7c3aed)',
+              border: saldoNeto === 0 ? '1px solid #c7d2fe' : 'none',
               borderRadius: 10, padding: '14px 20px', marginBottom: 16,
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              cursor: saldoReal === 0 ? 'pointer' : 'default'
-            }} onClick={saldoReal === 0 ? () => setModalSaldo(true) : undefined}>
+            }}>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: saldoReal === 0 ? '#475569' : 'rgba(255,255,255,0.85)' }}>
-                  {saldoReal === 0 ? '💰 Ingresa tu saldo real de Banorte para comenzar' : paraAsignar >= 0 ? '💰 Listo para asignar' : '🔴 Presupuesto excede saldo real'}
+                <div style={{ fontSize: 13, fontWeight: 600, color: saldoNeto === 0 ? '#475569' : 'rgba(255,255,255,0.85)' }}>
+                  {saldoNeto === 0 ? '💰 Ingresa el saldo inicial de tus cuentas para comenzar' : paraAsignar >= 0 ? '💰 Listo para asignar' : '🔴 Presupuesto excede saldo disponible'}
                 </div>
-                <div style={{ fontSize: 11, color: saldoReal === 0 ? '#94a3b8' : 'rgba(255,255,255,0.55)', marginTop: 2 }}>
-                  {saldoReal === 0 ? 'Toca aquí para ingresar el saldo' : 'Saldo real menos lo ya asignado a categorías'}
+                <div style={{ fontSize: 11, color: saldoNeto === 0 ? '#94a3b8' : 'rgba(255,255,255,0.55)', marginTop: 2 }}>
+                  {saldoNeto === 0 ? 'Toca ✎ Inicial en cada cuenta' : 'Saldo neto menos lo ya asignado a categorías'}
                 </div>
               </div>
-              {saldoReal > 0 && (
+              {saldoNeto > 0 && (
                 <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 22, fontWeight: 600, color: paraAsignar >= 0 ? '#ffffff' : '#fca5a5' }}>
                   {paraAsignar < 0 ? '-' : ''}{fmt(Math.abs(paraAsignar))}
                 </div>
@@ -639,17 +682,28 @@ export default function App({ session, onSignOut }) {
 
       {/* ── MODALS ── */}
 
-      {/* Saldo */}
-      <Modal open={modalSaldo} onClose={() => setModalSaldo(false)} title="Actualizar saldo real" subtitle="¿Cuánto tienes en Banorte negocio ahorita? Este número es la base para 'Listo para asignar'.">
-        <Field label="Saldo actual Banorte ($MXN)">
-          <input type="number" value={formSaldo.monto} onChange={e => setFormSaldo(p => ({ ...p, monto: e.target.value }))} placeholder="0.00" step="0.01" style={inputStyle} />
-        </Field>
-        <Field label="Fecha de consulta">
-          <input type="date" value={formSaldo.fecha} onChange={e => setFormSaldo(p => ({ ...p, fecha: e.target.value }))} style={inputStyle} />
+      {/* Saldo inicial cuenta */}
+      <Modal open={modalCuenta} onClose={() => setModalCuenta(false)} title={`Saldo inicial — ${formCuenta.nombre}`} subtitle="El saldo con el que arranca esta cuenta al inicio del mes.">
+        <Field label={`Saldo inicial ${formCuenta.nombre} ($MXN)`}>
+          <input type="number" value={formCuenta.monto} onChange={e => setFormCuenta(p => ({ ...p, monto: e.target.value }))} placeholder="0.00" step="0.01" style={inputStyle} />
         </Field>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
-          <button onClick={() => setModalSaldo(false)} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: 'none', border: '1px solid #c7d2fe', color: '#475569', cursor: 'pointer' }}>Cancelar</button>
-          <button onClick={handleSaveSaldo} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: '#4f46e5', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Guardar</button>
+          <button onClick={() => setModalCuenta(false)} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: 'none', border: '1px solid #c7d2fe', color: '#475569', cursor: 'pointer' }}>Cancelar</button>
+          <button onClick={handleSaveCuenta} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: '#4f46e5', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Guardar</button>
+        </div>
+      </Modal>
+
+      {/* Reconciliar */}
+      <Modal open={modalReconciliar} onClose={() => setModalReconciliar(false)} title={`Reconciliar — ${formReconciliar.nombre}`} subtitle="Ingresa el saldo real que muestra tu banco/app ahorita. Si hay diferencia, la app se ajusta automáticamente.">
+        <Field label={`Saldo real en ${formReconciliar.nombre} ahorita ($MXN)`}>
+          <input type="number" value={formReconciliar.saldoReal} onChange={e => setFormReconciliar(p => ({ ...p, saldoReal: e.target.value }))} placeholder="0.00" step="0.01" style={inputStyle} autoFocus />
+        </Field>
+        <div style={{ background: '#f5f7ff', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#475569', marginTop: 4 }}>
+          💡 La app calcula que tienes: <strong style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(cuentas.find(c => c.nombre === formReconciliar.nombre)?.saldoActual || 0)}</strong>
+        </div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
+          <button onClick={() => setModalReconciliar(false)} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: 'none', border: '1px solid #c7d2fe', color: '#475569', cursor: 'pointer' }}>Cancelar</button>
+          <button onClick={handleReconciliar} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: '#4f46e5', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Reconciliar</button>
         </div>
       </Modal>
 
@@ -661,6 +715,11 @@ export default function App({ session, onSignOut }) {
         <Field label="Categoría">
           <select value={formIngreso.categoria} onChange={e => setFormIngreso(p => ({ ...p, categoria: e.target.value }))} style={selectStyle}>
             {catsIngreso.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Cuenta">
+          <select value={formIngreso.cuenta} onChange={e => setFormIngreso(p => ({ ...p, cuenta: e.target.value }))} style={selectStyle}>
+            {CUENTAS_DEFAULT.filter(c => c.tipo === 'debito').map(c => <option key={c.nombre} value={c.nombre}>{c.nombre}</option>)}
           </select>
         </Field>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
@@ -677,6 +736,11 @@ export default function App({ session, onSignOut }) {
         <Field label="Categoría">
           <select value={formGasto.categoria} onChange={e => setFormGasto(p => ({ ...p, categoria: e.target.value }))} style={selectStyle}>
             {catOptions}
+          </select>
+        </Field>
+        <Field label="Cuenta">
+          <select value={formGasto.cuenta} onChange={e => setFormGasto(p => ({ ...p, cuenta: e.target.value }))} style={selectStyle}>
+            {CUENTAS_DEFAULT.map(c => <option key={c.nombre} value={c.nombre}>{c.tipo === 'credito' ? '💳 ' : '🏦 '}{c.nombre}</option>)}
           </select>
         </Field>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
