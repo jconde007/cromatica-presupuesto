@@ -1,15 +1,19 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-  CATS_GASTO_GRUPOS, CATS_GASTO, CATS_INGRESO,
+  CATS_GASTO_GRUPOS as CATS_GASTO_GRUPOS_DEFAULT,
+  CATS_GASTO as CATS_GASTO_DEFAULT,
+  CATS_INGRESO as CATS_INGRESO_DEFAULT,
   fmt, fmtInput, parseFmt, getMonthKey, formatMonthLabel,
   categorizeAuto, shouldExclude
 } from './constants'
 import {
-  getPresupuesto, setPresupuesto,
+  getPresupuesto, setPresupuesto, getArrastres, cerrarMes,
   getTransacciones, addTransaccion, updateTransaccionCat, deleteTransaccion,
   getSaldo, setSaldo,
   getMovimientos, addMovimiento
 } from './db'
+import Settings from './Settings.jsx'
+import { supabase } from './supabase'
 import './App.css'
 
 // ─── CSV PARSER ───────────────────────────────────────────────────────────────
@@ -110,7 +114,7 @@ const selectStyle = {
 }
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
-export default function App() {
+export default function App({ session, onSignOut }) {
   const [currentMonth, setCurrentMonth] = useState(getMonthKey())
   const [presupuesto, setPresupuestoState] = useState({})
   const [transacciones, setTransacciones] = useState([])
@@ -119,6 +123,13 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('presupuesto')
   const [notif, setNotif] = useState('')
   const [collapsedGroups, setCollapsedGroups] = useState(new Set())
+  const [showSettings, setShowSettings] = useState(false)
+  const [arrastres, setArrastres] = useState({})
+
+  // Dynamic categories from Supabase (fallback to static while loading)
+  const [catsGastoGrupos, setCatsGastoGrupos] = useState(CATS_GASTO_GRUPOS_DEFAULT)
+  const [catsGasto, setCatsGasto] = useState(CATS_GASTO_DEFAULT)
+  const [catsIngreso, setCatsIngreso] = useState(CATS_INGRESO_DEFAULT)
 
   // Modals
   const [modalSaldo, setModalSaldo] = useState(false)
@@ -134,22 +145,44 @@ export default function App() {
 
   const notify = (msg) => setNotif(msg)
 
+  const loadCategories = useCallback(async () => {
+    const { data } = await supabase.from('categorias').select('*').eq('activa', true).order('grupo_orden').order('cat_orden')
+    if (data && data.length > 0) {
+      const gastos = data.filter(c => !c.es_ingreso)
+      const ingresos = data.filter(c => c.es_ingreso)
+      const gruposUnicos = [...new Set(gastos.map(c => c.grupo))]
+      const grupos = gruposUnicos.map(g => ({
+        grupo: g,
+        cats: gastos.filter(c => c.grupo === g).map(c => ({ id: c.cat_id, label: c.label, color: c.color }))
+      }))
+      setCatsGastoGrupos(grupos)
+      setCatsGasto(gastos.map(c => ({ id: c.cat_id, label: c.label, color: c.color })))
+      setCatsIngreso(ingresos.map(c => ({ id: c.cat_id, label: c.label, color: c.color })))
+    }
+  }, [])
+
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [pres, txs, sal] = await Promise.all([
+      const [pres, txs, sal, arr] = await Promise.all([
         getPresupuesto(currentMonth),
         getTransacciones(currentMonth),
         getSaldo(currentMonth),
+        getArrastres(currentMonth),
       ])
       setPresupuestoState(pres)
       setTransacciones(txs)
       setSaldoState(sal)
+      setArrastres(arr)
     } catch (e) {
       notify('Error cargando datos: ' + e.message)
     }
     setLoading(false)
   }, [currentMonth])
+
+  useEffect(() => {
+    loadCategories()
+  }, [loadCategories])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -167,7 +200,7 @@ export default function App() {
   const margen = totalIngresos > 0 ? (resultado / totalIngresos * 100).toFixed(1) : 0
   const saldoReal = saldo.saldo_real || 0
   const paraAsignar = saldoReal - totalPresupuestado
-  const overspendCats = CATS_GASTO.filter(c => {
+  const overspendCats = catsGasto.filter(c => {
     const real = gastoActual[c.id] || 0
     const pres = presupuesto[c.id] || 0
     return real > pres && real > 0
@@ -186,6 +219,20 @@ export default function App() {
       next.has(id) ? next.delete(id) : next.add(id)
       return next
     })
+  }
+
+  const handleCerrarMes = async () => {
+    if (!confirm(`¿Cerrar ${formatMonthLabel(currentMonth)}? El sobrante de cada categoría se arrastrará al siguiente mes.`)) return
+    try {
+      await cerrarMes(currentMonth, gastoActual)
+      notify(`✓ Mes cerrado — sobrantes arrastrados a ${formatMonthLabel(nextMonthKey(currentMonth))}`)
+    } catch (e) { notify('Error: ' + e.message) }
+  }
+
+  const nextMonthKey = (mes) => {
+    const [y, m] = mes.split('-').map(Number)
+    const d = new Date(y, m, 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
   }
 
   const handlePresupuestoChange = async (cat, val) => {
@@ -274,15 +321,15 @@ export default function App() {
         setPresupuesto(currentMonth, formMover.hacia, presHacia + monto),
       ])
       setModalMover(false)
-      const dLabel = CATS_GASTO.find(c => c.id === formMover.desde)?.label || formMover.desde
-      const hLabel = CATS_GASTO.find(c => c.id === formMover.hacia)?.label || formMover.hacia
+      const dLabel = catsGasto.find(c => c.id === formMover.desde)?.label || formMover.desde
+      const hLabel = catsGasto.find(c => c.id === formMover.hacia)?.label || formMover.hacia
       notify(`✓ ${fmt(monto)} movido de ${dLabel} → ${hLabel}`)
     } catch (e) { notify('Error: ' + e.message) }
   }
 
   const catOptions = (
     <>
-      {CATS_GASTO_GRUPOS.map(g => (
+      {catsGastoGrupos.map(g => (
         <optgroup key={g.grupo} label={g.grupo}>
           {g.cats.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
         </optgroup>
@@ -293,9 +340,9 @@ export default function App() {
   const allCatOptions = (selectedId) => (
     <>
       <optgroup label="↑ Ingresos">
-        {CATS_INGRESO.map(c => <option key={c.id} value={c.id} selected={c.id === selectedId}>{c.label}</option>)}
+        {catsIngreso.map(c => <option key={c.id} value={c.id} selected={c.id === selectedId}>{c.label}</option>)}
       </optgroup>
-      {CATS_GASTO_GRUPOS.map(g => (
+      {catsGastoGrupos.map(g => (
         <optgroup key={g.grupo} label={g.grupo}>
           {g.cats.map(c => <option key={c.id} value={c.id} selected={c.id === selectedId}>{c.label}</option>)}
         </optgroup>
@@ -329,6 +376,11 @@ export default function App() {
             ↑ Importar CSV
             <input type="file" accept=".csv" onChange={handleCSV} style={{ display: 'none' }} />
           </label>
+          <button onClick={handleCerrarMes} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'none', border: '1px solid #c7d2fe', color: '#475569' }}>Cerrar mes →</button>
+          <button onClick={() => setShowSettings(true)} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'none', border: '1px solid #c7d2fe', color: '#475569' }}>⚙️</button>
+          <button onClick={onSignOut} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'none', border: '1px solid #c7d2fe', color: '#94a3b8' }}>
+            Salir
+          </button>
         </div>
       </div>
 
@@ -407,7 +459,7 @@ export default function App() {
                       {overspendCats.length} categoría{overspendCats.length > 1 ? 's' : ''} excedida{overspendCats.length > 1 ? 's' : ''} · Total sin cubrir: {fmt(overspendCats.reduce((s, c) => s + ((gastoActual[c.id] || 0) - (presupuesto[c.id] || 0)), 0))}
                     </div>
                   </div>
-                  <button onClick={() => { setFormMover({ desde: CATS_GASTO.find(c => (presupuesto[c.id] || 0) - (gastoActual[c.id] || 0) > 0)?.id || '', hacia: overspendCats[0]?.id || '', monto: '' }); setModalMover(true) }}
+                  <button onClick={() => { setFormMover({ desde: catsGasto.find(c => (presupuesto[c.id] || 0) - (gastoActual[c.id] || 0) > 0)?.id || '', hacia: overspendCats[0]?.id || '', monto: '' }); setModalMover(true) }}
                     style={{ padding: '7px 14px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                     Cubrir ahora →
                   </button>
@@ -432,7 +484,7 @@ export default function App() {
                 </tr>
               </thead>
               <tbody>
-                {CATS_INGRESO.map(cat => {
+                {catsIngreso.map(cat => {
                   const real = ingresoActual[cat.id] || 0
                   return (
                     <tr key={cat.id} style={{ borderBottom: '1px solid #f1f5ff' }}>
@@ -461,7 +513,7 @@ export default function App() {
                 </tr>
               </thead>
               <tbody>
-                {CATS_GASTO_GRUPOS.map(grupo => {
+                {catsGastoGrupos.map(grupo => {
                   const gId = grupo.grupo.replace(/\s+/g, '_')
                   const isCollapsed = collapsedGroups.has(gId)
                   const grupoGastado = grupo.cats.reduce((s, c) => s + (gastoActual[c.id] || 0), 0)
@@ -483,9 +535,11 @@ export default function App() {
                     </tr>,
                     ...(!isCollapsed ? grupo.cats.map(cat => {
                       const pres = presupuesto[cat.id] || 0
+                      const arr = arrastres[cat.id] || 0
                       const real = gastoActual[cat.id] || 0
-                      const disp = pres - real
-                      const pct = pres > 0 ? Math.min((real / pres) * 100, 100) : (real > 0 ? 100 : 0)
+                      const disponibleTotal = pres + arr
+                      const disp = disponibleTotal - real
+                      const pct = disponibleTotal > 0 ? Math.min((real / disponibleTotal) * 100, 100) : (real > 0 ? 100 : 0)
                       const barColor = pct >= 100 ? '#ef4444' : pct >= 80 ? '#f97316' : '#3b82f6'
                       const dispColor = disp < 0 ? '#dc2626' : pct >= 80 ? '#d97706' : '#2563eb'
                       return (
@@ -495,7 +549,10 @@ export default function App() {
                           <td style={{ padding: '12px 14px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 15, fontWeight: 500 }}>
                               <div style={{ width: 9, height: 9, borderRadius: '50%', background: cat.color, flexShrink: 0 }} />
-                              {cat.label}
+                              <div>
+                                {cat.label}
+                                {arr > 0 && <div style={{ fontSize: 11, color: '#059669', fontFamily: 'DM Mono, monospace' }}>+{fmt(arr)} arrastrado</div>}
+                              </div>
                             </div>
                           </td>
                           <td style={{ padding: '12px 14px', textAlign: 'right' }}>
@@ -557,9 +614,9 @@ export default function App() {
                     <select value={tx.categoria} onChange={e => handleUpdateCat(tx.id, e.target.value)}
                       style={{ background: '#f5f7ff', border: '1px solid #c7d2fe', color: '#0f172a', fontSize: 12, padding: '4px 7px', borderRadius: 5, width: '100%', cursor: 'pointer' }}>
                       <optgroup label="↑ Ingresos">
-                        {CATS_INGRESO.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                        {catsIngreso.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
                       </optgroup>
-                      {CATS_GASTO_GRUPOS.map(g => (
+                      {catsGastoGrupos.map(g => (
                         <optgroup key={g.grupo} label={g.grupo}>
                           {g.cats.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
                         </optgroup>
@@ -603,7 +660,7 @@ export default function App() {
         <Field label="Monto ($MXN)"><input type="number" value={formIngreso.monto} onChange={e => setFormIngreso(p => ({ ...p, monto: e.target.value }))} placeholder="0.00" step="0.01" style={inputStyle} /></Field>
         <Field label="Categoría">
           <select value={formIngreso.categoria} onChange={e => setFormIngreso(p => ({ ...p, categoria: e.target.value }))} style={selectStyle}>
-            {CATS_INGRESO.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+            {catsIngreso.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
           </select>
         </Field>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
@@ -632,7 +689,7 @@ export default function App() {
       <Modal open={modalMover} onClose={() => setModalMover(false)} title="Mover dinero entre categorías" subtitle="Cubre el overspending tomando presupuesto de otra categoría.">
         <Field label="Tomar de">
           <select value={formMover.desde} onChange={e => setFormMover(p => ({ ...p, desde: e.target.value }))} style={selectStyle}>
-            {CATS_GASTO.filter(c => (presupuesto[c.id] || 0) - (gastoActual[c.id] || 0) > 0).map(c => {
+            {catsGasto.filter(c => (presupuesto[c.id] || 0) - (gastoActual[c.id] || 0) > 0).map(c => {
               const disp = (presupuesto[c.id] || 0) - (gastoActual[c.id] || 0)
               return <option key={c.id} value={c.id}>{c.label} — disponible: {fmt(disp)}</option>
             })}
@@ -640,7 +697,7 @@ export default function App() {
         </Field>
         <Field label="Dar a">
           <select value={formMover.hacia} onChange={e => setFormMover(p => ({ ...p, hacia: e.target.value }))} style={selectStyle}>
-            {[...overspendCats, ...CATS_GASTO.filter(c => !overspendCats.includes(c))].map(c => {
+            {[...overspendCats, ...catsGasto.filter(c => !overspendCats.includes(c))].map(c => {
               const exceso = (gastoActual[c.id] || 0) - (presupuesto[c.id] || 0)
               return <option key={c.id} value={c.id}>{exceso > 0 ? `⚠️ ${c.label} (falta: ${fmt(exceso)})` : c.label}</option>
             })}
@@ -652,6 +709,13 @@ export default function App() {
           <button onClick={handleMover} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: '#4f46e5', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Mover dinero</button>
         </div>
       </Modal>
+
+      {showSettings && (
+        <Settings
+          onClose={() => setShowSettings(false)}
+          onCatsChanged={() => { loadCategories(); loadData() }}
+        />
+      )}
 
       <Notif msg={notif} onClose={() => setNotif('')} />
     </div>
