@@ -8,8 +8,10 @@ import {
 } from './constants'
 import {
   getPresupuesto, setPresupuesto, getArrastres, cerrarMes,
+  getAsignados, setAsignado,
   getTransacciones, addTransaccion, updateTransaccionCat, deleteTransaccion,
   getSaldosCuentas, setSaldoInicial, reconciliar, CUENTAS_DEFAULT,
+  getClabeMap, saveClabe,
 } from './db'
 import Settings from './Settings.jsx'
 import { supabase } from './supabase'
@@ -125,6 +127,8 @@ export default function App({ session, onSignOut }) {
   const [showSettings, setShowSettings] = useState(false)
   const [showReconciliar, setShowReconciliar] = useState(false)
   const [arrastres, setArrastres] = useState({})
+  const [asignados, setAsignados] = useState({})
+  const [clabeMap, setClabeMap] = useState({})
 
   // Dynamic categories from Supabase (fallback to static while loading)
   const [catsGastoGrupos, setCatsGastoGrupos] = useState(CATS_GASTO_GRUPOS_DEFAULT)
@@ -166,16 +170,20 @@ export default function App({ session, onSignOut }) {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [pres, txs, arr, cts] = await Promise.all([
+      const [pres, txs, arr, cts, asig, clMap] = await Promise.all([
         getPresupuesto(currentMonth),
         getTransacciones(currentMonth),
         getArrastres(currentMonth),
         getSaldosCuentas(currentMonth),
+        getAsignados(currentMonth),
+        getClabeMap(),
       ])
       setPresupuestoState(pres)
       setTransacciones(txs)
       setArrastres(arr)
       setCuentasState(cts)
+      setAsignados(asig)
+      setClabeMap(clMap)
     } catch (e) {
       notify('Error cargando datos: ' + e.message)
     }
@@ -203,7 +211,8 @@ export default function App({ session, onSignOut }) {
 
   // Saldo neto = débito - crédito
   const saldoNeto = cuentas.reduce((s, c) => c.tipo === 'credito' ? s - Math.abs(c.saldoActual) : s + c.saldoActual, 0)
-  const paraAsignar = saldoNeto - totalPresupuestado
+  const totalAsignado = Object.values(asignados).reduce((a, b) => a + b, 0)
+  const paraAsignar = saldoNeto - totalAsignado
 
   const overspendCats = catsGasto.filter(c => {
     const real = gastoActual[c.id] || 0
@@ -254,6 +263,14 @@ export default function App({ session, onSignOut }) {
     const txs = parseCSV(text)
     let added = 0, skipped = 0
     for (const tx of txs) {
+      // Try to use clabeMap for better categorization
+      const clabeMatch = tx.concepto.match(/CLABE:\s*(\d{10,18})/i)
+      if (clabeMatch) {
+        const clabe = clabeMatch[1]
+        if (clabeMap[clabe]) {
+          tx.categoria = clabeMap[clabe].categoria
+        }
+      }
       try {
         const ok = await addTransaccion(tx)
         ok ? added++ : skipped++
@@ -320,9 +337,22 @@ export default function App({ session, onSignOut }) {
     } catch (e) { notify('Error: ' + e.message) }
   }
 
-  const handleUpdateCat = async (id, categoria) => {
+  const handleAsignado = async (cat, val) => {
+    const monto = parseFmt(val)
+    setAsignados(prev => ({ ...prev, [cat]: monto }))
+    try { await setAsignado(currentMonth, cat, monto) }
+    catch (e) { notify('Error guardando: ' + e.message) }
+  }
+
+  const handleUpdateCat = async (id, categoria, concepto) => {
     try {
       await updateTransaccionCat(id, categoria)
+      // Save CLABE mapping if concepto has one
+      const clabeMatch = concepto?.match(/CLABE:\s*(\d{10,18})/i)
+      if (clabeMatch) {
+        await saveClabe(clabeMatch[1], categoria, concepto.substring(0, 60))
+        setClabeMap(prev => ({ ...prev, [clabeMatch[1]]: { categoria, descripcion: concepto.substring(0, 60) } }))
+      }
       await loadData()
     } catch (e) { notify('Error: ' + e.message) }
   }
@@ -447,27 +477,34 @@ export default function App({ session, onSignOut }) {
 
             {/* CUENTAS */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 16 }}>
-              {cuentas.map(c => (
-                <div key={c.nombre} style={{ background: '#fff', border: '1px solid #e0e7ff', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
-                      {c.tipo === 'credito' ? '💳' : '🏦'} {c.nombre}
+              {cuentas.map(c => {
+                const hoy = new Date().toISOString().split('T')[0]
+                const updatedAt = c.updated_at ? new Date(c.updated_at) : null
+                const diasDesde = updatedAt ? Math.floor((new Date() - updatedAt) / 86400000) : 99
+                const semaforo = diasDesde === 0 ? { color: '#059669', label: '🟢 hoy' } : diasDesde <= 2 ? { color: '#d97706', label: `🟡 hace ${diasDesde}d` } : { color: '#dc2626', label: `🔴 hace ${diasDesde}d` }
+                return (
+                  <div key={c.nombre} style={{ background: '#fff', border: '1px solid #e0e7ff', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {c.tipo === 'credito' ? '💳' : '🏦'} {c.nombre}
+                        <span style={{ fontSize: 10, color: semaforo.color }}>{semaforo.label}</span>
+                      </div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, fontWeight: 700, color: c.tipo === 'credito' ? '#dc2626' : '#059669' }}>
+                        {c.tipo === 'credito' && c.saldoActual < 0 ? '-' : ''}{fmt(Math.abs(c.saldoActual))}
+                      </div>
+                      {c.saldo_inicial === 0 && c.tipo === 'debito' && (
+                        <div style={{ fontSize: 10, color: '#f97316', marginTop: 2 }}>⚠️ Ingresa saldo inicial</div>
+                      )}
                     </div>
-                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, fontWeight: 700, color: c.tipo === 'credito' ? '#dc2626' : '#059669' }}>
-                      {c.tipo === 'credito' && c.saldoActual < 0 ? '-' : ''}{fmt(Math.abs(c.saldoActual))}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <button onClick={() => { setFormCuenta({ nombre: c.nombre, monto: c.saldo_inicial || '' }); setModalCuenta(true) }}
+                        style={{ padding: '4px 8px', borderRadius: 5, fontSize: 11, cursor: 'pointer', background: 'none', border: '1px solid #c7d2fe', color: '#475569' }}>✎ Inicial</button>
+                      <button onClick={() => { setFormReconciliar({ nombre: c.nombre, saldoReal: '' }); setModalReconciliar(true) }}
+                        style={{ padding: '4px 8px', borderRadius: 5, fontSize: 11, cursor: 'pointer', background: 'none', border: `1px solid ${semaforo.color}20`, color: semaforo.color }}>⚖️ Rec.</button>
                     </div>
-                    {c.saldo_inicial === 0 && c.tipo === 'debito' && (
-                      <div style={{ fontSize: 10, color: '#f97316', marginTop: 2 }}>⚠️ Ingresa saldo inicial</div>
-                    )}
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <button onClick={() => { setFormCuenta({ nombre: c.nombre, monto: c.saldo_inicial || '' }); setModalCuenta(true) }}
-                      style={{ padding: '4px 8px', borderRadius: 5, fontSize: 11, cursor: 'pointer', background: 'none', border: '1px solid #c7d2fe', color: '#475569' }}>✎ Inicial</button>
-                    <button onClick={() => { setFormReconciliar({ nombre: c.nombre, saldoReal: '' }); setModalReconciliar(true) }}
-                      style={{ padding: '4px 8px', borderRadius: 5, fontSize: 11, cursor: 'pointer', background: 'none', border: '1px solid #c7d2fe', color: '#475569' }}>⚖️ Rec.</button>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
 
             {/* BANNER LISTO PARA ASIGNAR */}
@@ -550,8 +587,8 @@ export default function App({ session, onSignOut }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 10, overflow: 'hidden' }}>
               <thead>
                 <tr style={{ background: '#f5f7ff' }}>
-                  {['Categoría', 'Presupuestado', 'Gastado', 'Progreso', 'Disponible'].map((h, i) => (
-                    <th key={i} style={{ fontSize: 12, fontWeight: 700, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.07em', padding: '10px 14px', borderBottom: '2px solid #a5b4fc', textAlign: i === 0 ? 'left' : 'right', minWidth: i === 3 ? 160 : 'auto' }}>{h}</th>
+                  {['Categoría', 'Objetivo', 'Asignado', 'Gastado', 'Disponible'].map((h, i) => (
+                    <th key={i} style={{ fontSize: 12, fontWeight: 700, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.07em', padding: '10px 14px', borderBottom: '2px solid #a5b4fc', textAlign: i === 0 ? 'left' : 'right' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -559,6 +596,7 @@ export default function App({ session, onSignOut }) {
                 {catsGastoGrupos.map(grupo => {
                   const gId = grupo.grupo.replace(/\s+/g, '_')
                   const isCollapsed = collapsedGroups.has(gId)
+                  const grupoAsignado = grupo.cats.reduce((s, c) => s + (asignados[c.id] || 0), 0)
                   const grupoGastado = grupo.cats.reduce((s, c) => s + (gastoActual[c.id] || 0), 0)
                   const grupoPresup = grupo.cats.reduce((s, c) => s + (presupuesto[c.id] || 0), 0)
                   return [
@@ -571,20 +609,20 @@ export default function App({ session, onSignOut }) {
                             {grupo.grupo}
                           </span>
                           <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#94a3b8' }}>
-                            {fmt(grupoGastado)} / {fmt(grupoPresup)}
+                            asig: {fmt(grupoAsignado)} · gast: {fmt(grupoGastado)} · obj: {fmt(grupoPresup)}
                           </span>
                         </div>
                       </td>
                     </tr>,
                     ...(!isCollapsed ? grupo.cats.map(cat => {
-                      const pres = presupuesto[cat.id] || 0
-                      const arr = arrastres[cat.id] || 0
+                      const obj = presupuesto[cat.id] || 0
+                      const asig = (asignados[cat.id] || 0) + (arrastres[cat.id] || 0)
                       const real = gastoActual[cat.id] || 0
-                      const disponibleTotal = pres + arr
-                      const disp = disponibleTotal - real
-                      const pct = disponibleTotal > 0 ? Math.min((real / disponibleTotal) * 100, 100) : (real > 0 ? 100 : 0)
+                      const disp = asig - real
+                      const pct = asig > 0 ? Math.min((real / asig) * 100, 100) : (real > 0 ? 100 : 0)
                       const barColor = pct >= 100 ? '#ef4444' : pct >= 80 ? '#f97316' : '#3b82f6'
                       const dispColor = disp < 0 ? '#dc2626' : pct >= 80 ? '#d97706' : '#2563eb'
+                      const arrStr = arrastres[cat.id] > 0 ? ` (+${fmt(arrastres[cat.id])} arrastrado)` : ''
                       return (
                         <tr key={cat.id} style={{ borderBottom: '1px solid #f1f5ff' }}
                           onMouseEnter={e => e.currentTarget.style.background = '#f8faff'}
@@ -594,24 +632,31 @@ export default function App({ session, onSignOut }) {
                               <div style={{ width: 9, height: 9, borderRadius: '50%', background: cat.color, flexShrink: 0 }} />
                               <div>
                                 {cat.label}
-                                {arr > 0 && <div style={{ fontSize: 11, color: '#059669', fontFamily: 'DM Mono, monospace' }}>+{fmt(arr)} arrastrado</div>}
+                                {arrStr && <div style={{ fontSize: 11, color: '#059669', fontFamily: 'DM Mono, monospace' }}>{arrStr}</div>}
                               </div>
                             </div>
                           </td>
                           <td style={{ padding: '12px 14px', textAlign: 'right' }}>
                             <input
-                              defaultValue={fmtInput(pres)}
+                              defaultValue={fmtInput(obj)}
                               onBlur={e => handlePresupuestoChange(cat.id, e.target.value)}
-                              onFocus={e => { e.target.value = pres || '' }}
-                              style={{ background: '#f5f7ff', border: '1px solid #c7d2fe', color: '#0f172a', fontFamily: 'DM Mono, monospace', fontSize: 14, textAlign: 'right', padding: '5px 10px', borderRadius: 5, width: 130 }}
+                              onFocus={e => { e.target.value = obj || '' }}
+                              style={{ background: '#f5f7ff', border: '1px solid #c7d2fe', color: '#94a3b8', fontFamily: 'DM Mono, monospace', fontSize: 13, textAlign: 'right', padding: '5px 10px', borderRadius: 5, width: 120 }}
                             />
                           </td>
-                          <td style={{ padding: '12px 14px', textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 15 }}>{fmt(real)}</td>
-                          <td style={{ padding: '12px 14px', minWidth: 160 }}>
-                            <div style={{ height: 7, background: '#e0e7ff', borderRadius: 4, overflow: 'hidden', marginBottom: 4 }}>
-                              <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 4, transition: 'width 0.4s ease' }} />
+                          <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                            <input
+                              defaultValue={fmtInput(asignados[cat.id] || 0)}
+                              onBlur={e => handleAsignado(cat.id, e.target.value)}
+                              onFocus={e => { e.target.value = asignados[cat.id] || '' }}
+                              style={{ background: asig > 0 ? '#eff6ff' : '#f5f7ff', border: `1px solid ${asig > 0 ? '#93c5fd' : '#c7d2fe'}`, color: '#0f172a', fontFamily: 'DM Mono, monospace', fontSize: 13, textAlign: 'right', padding: '5px 10px', borderRadius: 5, width: 120, fontWeight: asig > 0 ? 600 : 400 }}
+                            />
+                          </td>
+                          <td style={{ padding: '12px 14px', textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14 }}>
+                            <div>{fmt(real)}</div>
+                            <div style={{ height: 4, background: '#e0e7ff', borderRadius: 2, overflow: 'hidden', marginTop: 4, width: 80, marginLeft: 'auto' }}>
+                              <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 2 }} />
                             </div>
-                            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, fontWeight: 600, color: barColor }}>{pct.toFixed(0)}%</div>
                           </td>
                           <td style={{ padding: '12px 14px', textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 15, fontWeight: 700, color: dispColor }}>
                             {disp < 0 ? '-' : ''}{fmt(Math.abs(disp))}
@@ -643,37 +688,58 @@ export default function App({ session, onSignOut }) {
                 <p>No hay transacciones este mes.<br />Importa tu CSV de Banorte para comenzar.</p>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                {transacciones.map(tx => (
-                  <div key={tx.id} style={{
-                    display: 'grid', gridTemplateColumns: '95px 1fr 180px 110px 70px',
-                    alignItems: 'center', gap: 12, padding: '11px 14px',
-                    borderRadius: 8, background: '#fff', border: '1px solid #e0e7ff'
-                  }}>
-                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#475569', fontWeight: 500 }}>
-                      {tx.fecha.split('-').reverse().join('/')}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {transacciones.map((tx, idx) => {
+                  // Duplicate detection
+                  const isDuplicate = transacciones.some((other, otherIdx) =>
+                    otherIdx !== idx &&
+                    other.monto === tx.monto &&
+                    other.tipo === tx.tipo &&
+                    Math.abs(new Date(other.fecha) - new Date(tx.fecha)) <= 86400000 * 3
+                  )
+                  return (
+                    <div key={tx.id} style={{
+                      borderRadius: 8, background: isDuplicate ? '#fffbeb' : '#fff',
+                      border: `1px solid ${isDuplicate ? '#fcd34d' : '#e0e7ff'}`,
+                      overflow: 'hidden'
+                    }}>
+                      {isDuplicate && (
+                        <div style={{ background: '#fef3c7', padding: '4px 14px', fontSize: 11, color: '#92400e', fontWeight: 600 }}>
+                          ⚠️ Posible duplicado — mismo monto en fechas cercanas. ¿Es correcto?
+                        </div>
+                      )}
+                      <div style={{ display: 'grid', gridTemplateColumns: '95px 1fr 200px 110px 70px', alignItems: 'start', gap: 12, padding: '11px 14px' }}>
+                        <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#475569', fontWeight: 500, paddingTop: 2 }}>
+                          {tx.fecha.split('-').reverse().join('/')}
+                        </div>
+                        <div style={{ fontSize: 13, color: '#0f172a', lineHeight: 1.4, wordBreak: 'break-word' }}>
+                          {tx.concepto}
+                          {tx.cuenta && tx.cuenta !== 'Banorte' && (
+                            <span style={{ marginLeft: 6, fontSize: 10, background: '#e0e7ff', color: '#4f46e5', padding: '1px 5px', borderRadius: 3, fontWeight: 600 }}>{tx.cuenta}</span>
+                          )}
+                        </div>
+                        <select value={tx.categoria} onChange={e => handleUpdateCat(tx.id, e.target.value, tx.concepto)}
+                          style={{ background: '#f5f7ff', border: '1px solid #c7d2fe', color: '#0f172a', fontSize: 12, padding: '4px 7px', borderRadius: 5, width: '100%', cursor: 'pointer' }}>
+                          <optgroup label="↑ Ingresos">
+                            {catsIngreso.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                          </optgroup>
+                          {catsGastoGrupos.map(g => (
+                            <optgroup key={g.grupo} label={g.grupo}>
+                              {g.cats.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                            </optgroup>
+                          ))}
+                        </select>
+                        <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, fontWeight: 600, textAlign: 'right', color: tx.tipo === 'ingreso' ? '#059669' : '#dc2626', paddingTop: 2 }}>
+                          {tx.tipo === 'ingreso' ? '+' : '-'}{fmt(tx.monto)}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 2 }}>
+                          <button onClick={() => handleDeleteTx(tx.id)}
+                            style={{ background: 'none', border: '1px solid #fee2e2', color: '#dc2626', padding: '4px 8px', borderRadius: 5, cursor: 'pointer', fontSize: 12 }}>✕</button>
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ fontSize: 14, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tx.concepto}>{tx.concepto}</div>
-                    <select value={tx.categoria} onChange={e => handleUpdateCat(tx.id, e.target.value)}
-                      style={{ background: '#f5f7ff', border: '1px solid #c7d2fe', color: '#0f172a', fontSize: 12, padding: '4px 7px', borderRadius: 5, width: '100%', cursor: 'pointer' }}>
-                      <optgroup label="↑ Ingresos">
-                        {catsIngreso.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-                      </optgroup>
-                      {catsGastoGrupos.map(g => (
-                        <optgroup key={g.grupo} label={g.grupo}>
-                          {g.cats.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-                        </optgroup>
-                      ))}
-                    </select>
-                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, fontWeight: 600, textAlign: 'right', color: tx.tipo === 'ingreso' ? '#059669' : '#dc2626' }}>
-                      {tx.tipo === 'ingreso' ? '+' : '-'}{fmt(tx.monto)}
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                      <button onClick={() => handleDeleteTx(tx.id)}
-                        style={{ background: 'none', border: '1px solid #fee2e2', color: '#dc2626', padding: '4px 8px', borderRadius: 5, cursor: 'pointer', fontSize: 12 }}>✕</button>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </>

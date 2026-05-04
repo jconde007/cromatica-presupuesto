@@ -126,14 +126,52 @@ export async function deleteTransaccion(id) {
 // ─── RECONCILIACIÓN ──────────────────────────────────────────────────────────
 
 export async function reconciliar(mes, nombre, saldoReal) {
-  // Calcula el saldo que la app cree que hay
   const cuentas = await getSaldosCuentas(mes)
   const cuenta = cuentas.find(c => c.nombre === nombre)
   if (!cuenta) return null
   const diferencia = saldoReal - cuenta.saldoActual
-  // Si hay diferencia, ajusta el saldo inicial para que cuadre
+  const tipo = CUENTAS_DEFAULT.find(c => c.nombre === nombre)?.tipo || 'debito'
   if (Math.abs(diferencia) > 0.01) {
-    await setSaldoInicial(mes, nombre, (cuenta.saldo_inicial || 0) + diferencia)
+    await supabase.from('cuentas').upsert({
+      mes, nombre, tipo,
+      saldo_inicial: (cuenta.saldo_inicial || 0) + diferencia,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'nombre,mes' })
+  } else {
+    await supabase.from('cuentas').update({ updated_at: new Date().toISOString() }).eq('mes', mes).eq('nombre', nombre)
   }
   return diferencia
+}
+
+// ─── ASIGNADO (SOBRES VIRTUALES) ─────────────────────────────────────────────
+
+export async function getAsignados(mes) {
+  const { data } = await supabase.from('presupuestos').select('categoria, asignado').eq('mes', mes)
+  if (!data) return {}
+  return Object.fromEntries(data.map(r => [r.categoria, r.asignado || 0]))
+}
+
+export async function setAsignado(mes, categoria, asignado) {
+  const { error } = await supabase.from('presupuestos')
+    .upsert({ mes, categoria, asignado }, { onConflict: 'mes,categoria' })
+  if (error) throw error
+}
+
+// ─── CLABE CATEGORIAS (APRENDIZAJE) ──────────────────────────────────────────
+
+export async function getClabeMap() {
+  const { data } = await supabase.from('clabe_categorias').select('clabe, categoria, descripcion')
+  if (!data) return {}
+  return Object.fromEntries(data.map(r => [r.clabe, { categoria: r.categoria, descripcion: r.descripcion }]))
+}
+
+export async function saveClabe(clabe, categoria, descripcion) {
+  if (!clabe || clabe.length < 6) return
+  await supabase.from('clabe_categorias')
+    .upsert({ clabe, categoria, descripcion }, { onConflict: 'clabe' })
+}
+
+export async function getUltimaReconciliacion(mes, nombre) {
+  const { data } = await supabase.from('cuentas').select('updated_at').eq('mes', mes).eq('nombre', nombre).single()
+  return data?.updated_at || null
 }
