@@ -211,8 +211,11 @@ export default function App({ session, onSignOut }) {
 
   // Saldo neto = débito - crédito
   const saldoNeto = cuentas.reduce((s, c) => c.tipo === 'credito' ? s - Math.abs(c.saldoActual) : s + c.saldoActual, 0)
+  // Listo para asignar = solo cuentas débito (no incluye deuda de tarjetas)
+  const saldoDebito = cuentas.filter(c => c.tipo === 'debito').reduce((s, c) => s + c.saldoActual, 0)
+  const deudaCredito = cuentas.filter(c => c.tipo === 'credito').reduce((s, c) => s + Math.abs(c.saldoActual), 0)
   const totalAsignado = Object.values(asignados).reduce((a, b) => a + b, 0)
-  const paraAsignar = saldoNeto - totalAsignado
+  const paraAsignar = saldoDebito - totalAsignado
 
   const overspendCats = catsGasto.filter(c => {
     const real = gastoActual[c.id] || 0
@@ -510,7 +513,7 @@ export default function App({ session, onSignOut }) {
             {/* BANNER LISTO PARA ASIGNAR — estilo YNAB */}
             <div style={{
               borderRadius: 12,
-              marginBottom: 20,
+              marginBottom: deudaCredito > 0 ? 0 : 20,
               background: paraAsignar > 0 ? 'linear-gradient(135deg, #059669, #10b981)' :
                           paraAsignar === 0 ? 'linear-gradient(135deg, #4f46e5, #7c3aed)' :
                           'linear-gradient(135deg, #dc2626, #ef4444)',
@@ -532,12 +535,22 @@ export default function App({ session, onSignOut }) {
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>Saldo neto</div>
-                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{saldoNeto < 0 ? '-' : ''}{fmt(Math.abs(saldoNeto))}</div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>En cuentas débito</div>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{fmt(saldoDebito)}</div>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 8, marginBottom: 4 }}>Total asignado</div>
                 <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{fmt(totalAsignado)}</div>
               </div>
             </div>
+
+            {/* DEUDA TARJETAS */}
+            {deudaCredito > 0 && (
+              <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '0 0 12px 12px', padding: '12px 28px', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ fontSize: 13, color: '#92400e' }}>
+                  💳 Deuda en tarjetas de crédito — asigna dinero a <strong>"Pago MP Tarjeta"</strong> para irla pagando
+                </div>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, fontWeight: 700, color: '#dc2626' }}>-{fmt(deudaCredito)}</div>
+              </div>
+            )}
 
             {/* OVERSPENDING BANNER */}
             {overspendCats.length > 0 && (

@@ -41,8 +41,9 @@ export const CATS_GASTO_GRUPOS = [
   {
     grupo: '🧾 Impuestos y Finanzas',
     cats: [
-      { id: 'SAT',          label: 'SAT / Impuestos', color: '#f87171' },
-      { id: 'GastosVarios', label: 'Gastos varios',   color: '#94a3b8' },
+      { id: 'SAT',            label: 'SAT / Impuestos',   color: '#f87171' },
+      { id: 'PagoMPTarjeta',  label: 'Pago MP Tarjeta',   color: '#f97316' },
+      { id: 'GastosVarios',   label: 'Gastos varios',     color: '#94a3b8' },
     ]
   },
 ]
@@ -61,7 +62,7 @@ export const DEFAULT_PRESUPUESTO = {
   CFE: 1000, Telmex: 649, Odoo: 493, Canva: 300, Adobe: 400,
   GDrive: 100, Shopify: 600, MantoPl: 480,
   SueldoJorge: 32000, SueldoMemo: 3500, SueldoMony: 0,
-  SAT: 8000, GastosVarios: 1500,
+  SAT: 8000, PagoMPTarjeta: 0, GastosVarios: 1500,
 }
 
 export function categorizeAuto(concepto, tipo) {
