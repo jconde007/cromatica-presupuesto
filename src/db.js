@@ -75,15 +75,17 @@ export async function setPresupuesto(mes, categoria, monto) {
 }
 
 export async function cerrarMes(mes, gastoActual) {
-  const { data: presData } = await supabase.from('presupuestos').select('categoria, monto, arrastre').eq('mes', mes)
+  // Traemos presupuestos Y asignados del mes actual
+  const { data: presData } = await supabase.from('presupuestos').select('categoria, monto, arrastre, asignado').eq('mes', mes)
   if (!presData) return
   const next = nextMonth(mes)
-  const { data: nextData } = await supabase.from('presupuestos').select('categoria, monto, arrastre').eq('mes', next)
+  const { data: nextData } = await supabase.from('presupuestos').select('categoria, monto, arrastre, asignado').eq('mes', next)
   const nextMap = nextData ? Object.fromEntries(nextData.map(r => [r.categoria, { monto: r.monto, arrastre: r.arrastre || 0 }])) : {}
   for (const row of presData) {
     const gastado = gastoActual[row.categoria] || 0
-    const disponible = (row.monto || 0) + (row.arrastre || 0)
-    const sobrante = disponible - gastado
+    // Sobrante = lo que tenías asignado (dinero real apartado) menos lo que gastaste
+    const asignado = (row.asignado || 0) + (row.arrastre || 0)
+    const sobrante = asignado - gastado
     if (sobrante > 0) {
       const existeNext = nextMap[row.categoria]
       if (existeNext) {

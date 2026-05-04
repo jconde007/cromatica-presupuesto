@@ -398,12 +398,12 @@ export default function App({ session, onSignOut }) {
     if (formMover.desde === formMover.hacia) { notify('⚠️ Las categorías deben ser distintas'); return }
     if (!monto || monto <= 0) { notify('⚠️ Ingresa un monto válido'); return }
     try {
-      const presDesde = presupuesto[formMover.desde] || 0
-      const presHacia = presupuesto[formMover.hacia] || 0
-      setPresupuestoState(prev => ({ ...prev, [formMover.desde]: presDesde - monto, [formMover.hacia]: presHacia + monto }))
+      const asigDesde = asignados[formMover.desde] || 0
+      const asigHacia = asignados[formMover.hacia] || 0
+      setAsignados(prev => ({ ...prev, [formMover.desde]: asigDesde - monto, [formMover.hacia]: asigHacia + monto }))
       await Promise.all([
-        setPresupuesto(currentMonth, formMover.desde, presDesde - monto),
-        setPresupuesto(currentMonth, formMover.hacia, presHacia + monto),
+        setAsignado(currentMonth, formMover.desde, asigDesde - monto),
+        setAsignado(currentMonth, formMover.hacia, asigHacia + monto),
       ])
       setModalMover(false)
       const dLabel = catsGasto.find(c => c.id === formMover.desde)?.label || formMover.desde
@@ -456,7 +456,7 @@ export default function App({ session, onSignOut }) {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => { setFormIngreso({ fecha: new Date().toISOString().split('T')[0], concepto: '', monto: '', categoria: 'VentasDirectas' }); setModalIngreso(true) }} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'none', border: '1px solid #c7d2fe', color: '#475569' }}>+ Ingreso</button>
-          <button onClick={() => { setFormGasto({ fecha: new Date().toISOString().split('T')[0], concepto: '', monto: '', categoria: 'Viniles' }); setModalGasto(true) }} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'none', border: '1px solid #c7d2fe', color: '#475569' }}>+ Gasto</button>
+          <button onClick={() => { setFormGasto({ fecha: new Date().toISOString().split('T')[0], concepto: '', monto: '', categoria: 'Viniles', cuenta: 'MP Tarjeta' }); setModalGasto(true) }} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'none', border: '1px solid #c7d2fe', color: '#475569' }}>+ Gasto</button>
           <label style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', background: '#4f46e5', color: '#fff', border: 'none' }}>
             ↑ Importar CSV
             <input type="file" accept=".csv" onChange={handleCSV} style={{ display: 'none' }} />
@@ -591,17 +591,23 @@ export default function App({ session, onSignOut }) {
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 700, color: '#dc2626' }}>⚠️ Overspending detectado</div>
                     <div style={{ fontSize: 13, color: '#991b1b', marginTop: 2 }}>
-                      {overspendCats.length} categoría{overspendCats.length > 1 ? 's' : ''} excedida{overspendCats.length > 1 ? 's' : ''} · Total sin cubrir: {fmt(overspendCats.reduce((s, c) => s + ((gastoActual[c.id] || 0) - (presupuesto[c.id] || 0)), 0))}
+                      {overspendCats.length} categoría{overspendCats.length > 1 ? 's' : ''} excedida{overspendCats.length > 1 ? 's' : ''} · Total sin cubrir: {fmt(overspendCats.reduce((s, c) => s + ((gastoActual[c.id] || 0) - (asignados[c.id] || 0)), 0))}
                     </div>
                   </div>
-                  <button onClick={() => { setFormMover({ desde: catsGasto.find(c => (presupuesto[c.id] || 0) - (gastoActual[c.id] || 0) > 0)?.id || '', hacia: overspendCats[0]?.id || '', monto: '' }); setModalMover(true) }}
+                  <button onClick={() => {
+                    const catConDinero = catsGasto.find(c => (asignados[c.id] || 0) - (gastoActual[c.id] || 0) > 0)
+                    const catOS = overspendCats[0]
+                    const exceso = catOS ? (gastoActual[catOS.id] || 0) - (asignados[catOS.id] || 0) : 0
+                    setFormMover({ desde: catConDinero?.id || '', hacia: catOS?.id || '', monto: exceso > 0 ? String(Math.ceil(exceso)) : '' })
+                    setModalMover(true)
+                  }}
                     style={{ padding: '7px 14px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                     Cubrir ahora →
                   </button>
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
                   {overspendCats.map(c => {
-                    const exceso = (gastoActual[c.id] || 0) - (presupuesto[c.id] || 0)
+                    const exceso = (gastoActual[c.id] || 0) - (asignados[c.id] || 0)
                     return <span key={c.id} style={{ background: '#fee2e2', color: '#dc2626', padding: '4px 10px', borderRadius: 20, fontSize: 12, fontFamily: 'DM Mono, monospace', fontWeight: 600 }}>{c.label} -{fmt(exceso)}</span>
                   })}
                 </div>
@@ -914,8 +920,8 @@ export default function App({ session, onSignOut }) {
       <Modal open={modalMover} onClose={() => setModalMover(false)} title="Mover dinero entre categorías" subtitle="Cubre el overspending tomando presupuesto de otra categoría.">
         <Field label="Tomar de">
           <select value={formMover.desde} onChange={e => setFormMover(p => ({ ...p, desde: e.target.value }))} style={selectStyle}>
-            {catsGasto.filter(c => (presupuesto[c.id] || 0) - (gastoActual[c.id] || 0) > 0).map(c => {
-              const disp = (presupuesto[c.id] || 0) - (gastoActual[c.id] || 0)
+            {catsGasto.filter(c => (asignados[c.id] || 0) - (gastoActual[c.id] || 0) > 0).map(c => {
+              const disp = (asignados[c.id] || 0) - (gastoActual[c.id] || 0)
               return <option key={c.id} value={c.id}>{c.label} — disponible: {fmt(disp)}</option>
             })}
           </select>
@@ -923,7 +929,7 @@ export default function App({ session, onSignOut }) {
         <Field label="Dar a">
           <select value={formMover.hacia} onChange={e => setFormMover(p => ({ ...p, hacia: e.target.value }))} style={selectStyle}>
             {[...overspendCats, ...catsGasto.filter(c => !overspendCats.includes(c))].map(c => {
-              const exceso = (gastoActual[c.id] || 0) - (presupuesto[c.id] || 0)
+              const exceso = (gastoActual[c.id] || 0) - (asignados[c.id] || 0)
               return <option key={c.id} value={c.id}>{exceso > 0 ? `⚠️ ${c.label} (falta: ${fmt(exceso)})` : c.label}</option>
             })}
           </select>
