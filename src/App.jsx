@@ -709,14 +709,8 @@ export default function App({ session, onSignOut }) {
                             </div>
                           </td>
                           <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                            <input
-                              defaultValue={fmtInput(obj)}
-                              onBlur={e => handlePresupuestoChange(cat.id, e.target.value)}
-                              onFocus={e => { e.target.value = obj || '' }}
-                              style={{ background: '#f5f7ff', border: '1px solid #c7d2fe', color: '#94a3b8', fontFamily: 'DM Mono, monospace', fontSize: 13, textAlign: 'right', padding: '5px 10px', borderRadius: 5, width: 110 }}
-                            />
-                            {/* Deadline + % objetivo debajo del input */}
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
+                            {/* Deadline + % objetivo encima del input */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, marginBottom: 5, flexWrap: 'wrap' }}>
                               <span onClick={() => { setFormDeadline({ catId: cat.id, catLabel: cat.label, fecha: dl || '' }); setModalDeadline(true) }}
                                 style={{
                                   fontSize: 11, cursor: 'pointer', fontWeight: 600,
@@ -730,13 +724,19 @@ export default function App({ session, onSignOut }) {
                               </span>
                               {obj > 0 && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                  <div style={{ width: 50, height: 8, background: '#e0e7ff', borderRadius: 4, overflow: 'hidden' }}>
+                                  <div style={{ width: 40, height: 8, background: '#e0e7ff', borderRadius: 4, overflow: 'hidden' }}>
                                     <div style={{ height: '100%', width: `${pctObj}%`, background: pctObj >= 100 ? '#059669' : '#818cf8', borderRadius: 4 }} />
                                   </div>
                                   <span style={{ fontSize: 11, color: pctObj >= 100 ? '#059669' : '#818cf8', fontFamily: 'DM Mono, monospace', fontWeight: 700 }}>{pctObj.toFixed(0)}%</span>
                                 </div>
                               )}
                             </div>
+                            <input
+                              defaultValue={fmtInput(obj)}
+                              onBlur={e => handlePresupuestoChange(cat.id, e.target.value)}
+                              onFocus={e => { e.target.value = obj || '' }}
+                              style={{ background: '#f5f7ff', border: '1px solid #c7d2fe', color: '#94a3b8', fontFamily: 'DM Mono, monospace', fontSize: 13, textAlign: 'right', padding: '5px 10px', borderRadius: 5, width: 110 }}
+                            />
                           </td>
                           <td style={{ padding: '12px 14px', textAlign: 'right' }}>
                             <input
