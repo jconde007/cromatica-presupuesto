@@ -547,7 +547,7 @@ export default function App({ session, onSignOut }) {
               borderRadius: 12,
               marginBottom: deudaCredito > 0 ? 0 : 20,
               background: paraAsignar > 0 ? 'linear-gradient(135deg, #059669, #10b981)' :
-                          paraAsignar === 0 ? 'linear-gradient(135deg, #4f46e5, #7c3aed)' :
+                          paraAsignar >= -1 ? 'linear-gradient(135deg, #4f46e5, #7c3aed)' :
                           'linear-gradient(135deg, #dc2626, #ef4444)',
               padding: '20px 28px',
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -562,7 +562,7 @@ export default function App({ session, onSignOut }) {
                 </div>
                 <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', marginTop: 6 }}>
                   {paraAsignar > 0 ? '✅ Tienes dinero sin asignar — distribúyelo en categorías' :
-                   paraAsignar === 0 ? '✅ Perfecto — todo el dinero está asignado' :
+                   paraAsignar >= -1 ? '✅ Perfecto — todo el dinero está asignado' :
                    '🔴 Te pasaste — asignaste más de lo que tienes disponible'}
                 </div>
               </div>
