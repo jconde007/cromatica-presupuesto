@@ -216,8 +216,8 @@ export default function App({ session, onSignOut }) {
 
   const overspendCats = catsGasto.filter(c => {
     const real = gastoActual[c.id] || 0
-    const pres = presupuesto[c.id] || 0
-    return real > pres && real > 0
+    const asig = (asignados[c.id] || 0) + (arrastres[c.id] || 0)
+    return real > asig && real > 0
   })
 
   // ── Handlers ──
@@ -507,26 +507,36 @@ export default function App({ session, onSignOut }) {
               })}
             </div>
 
-            {/* BANNER LISTO PARA ASIGNAR */}
+            {/* BANNER LISTO PARA ASIGNAR — estilo YNAB */}
             <div style={{
-              background: saldoNeto === 0 ? '#fff' : 'linear-gradient(135deg,#4f46e5,#7c3aed)',
-              border: saldoNeto === 0 ? '1px solid #c7d2fe' : 'none',
-              borderRadius: 10, padding: '14px 20px', marginBottom: 16,
+              borderRadius: 12,
+              marginBottom: 20,
+              background: paraAsignar > 0 ? 'linear-gradient(135deg, #059669, #10b981)' :
+                          paraAsignar === 0 ? 'linear-gradient(135deg, #4f46e5, #7c3aed)' :
+                          'linear-gradient(135deg, #dc2626, #ef4444)',
+              padding: '20px 28px',
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              boxShadow: paraAsignar > 0 ? '0 4px 20px #05966930' : paraAsignar < 0 ? '0 4px 20px #dc262630' : '0 4px 20px #4f46e530'
             }}>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: saldoNeto === 0 ? '#475569' : 'rgba(255,255,255,0.85)' }}>
-                  {saldoNeto === 0 ? '💰 Ingresa el saldo inicial de tus cuentas para comenzar' : paraAsignar >= 0 ? '💰 Listo para asignar' : '🔴 Presupuesto excede saldo disponible'}
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.75)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>
+                  Listo para asignar
                 </div>
-                <div style={{ fontSize: 11, color: saldoNeto === 0 ? '#94a3b8' : 'rgba(255,255,255,0.55)', marginTop: 2 }}>
-                  {saldoNeto === 0 ? 'Toca ✎ Inicial en cada cuenta' : 'Saldo neto menos lo ya asignado a categorías'}
-                </div>
-              </div>
-              {saldoNeto > 0 && (
-                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 22, fontWeight: 600, color: paraAsignar >= 0 ? '#ffffff' : '#fca5a5' }}>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 38, fontWeight: 700, color: '#ffffff', lineHeight: 1 }}>
                   {paraAsignar < 0 ? '-' : ''}{fmt(Math.abs(paraAsignar))}
                 </div>
-              )}
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', marginTop: 6 }}>
+                  {paraAsignar > 0 ? '✅ Tienes dinero sin asignar — distribúyelo en categorías' :
+                   paraAsignar === 0 ? '✅ Perfecto — todo el dinero está asignado' :
+                   '🔴 Te pasaste — asignaste más de lo que tienes disponible'}
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>Saldo neto</div>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{saldoNeto < 0 ? '-' : ''}{fmt(Math.abs(saldoNeto))}</div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 8, marginBottom: 4 }}>Total asignado</div>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{fmt(totalAsignado)}</div>
+              </div>
             </div>
 
             {/* OVERSPENDING BANNER */}
