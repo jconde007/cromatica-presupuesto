@@ -704,28 +704,7 @@ export default function App({ session, onSignOut }) {
                               <div style={{ width: 9, height: 9, borderRadius: '50%', background: cat.color, flexShrink: 0 }} />
                               <div style={{ flex: 1 }}>
                                 <div style={{ fontSize: 15, fontWeight: 500 }}>{cat.label}</div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
-                                  <span onClick={() => { setFormDeadline({ catId: cat.id, catLabel: cat.label, fecha: dl || '' }); setModalDeadline(true) }}
-                                    style={{
-                                      fontSize: 12, cursor: 'pointer', fontWeight: 600,
-                                      color: dl ? (diasDl <= 2 ? '#fff' : diasDl <= 7 ? '#92400e' : '#475569') : '#94a3b8',
-                                      padding: '3px 8px',
-                                      background: dl ? (diasDl <= 2 ? '#dc2626' : diasDl <= 7 ? '#fef3c7' : '#f1f5f9') : '#f8faff',
-                                      border: `1px solid ${dl ? (diasDl <= 2 ? '#dc2626' : diasDl <= 7 ? '#fcd34d' : '#e0e7ff') : '#e0e7ff'}`,
-                                      borderRadius: 6, fontFamily: 'DM Mono, monospace',
-                                    }}>
-                                    {dl ? (diasDl < 0 ? '⚠️ vencido' : diasDl === 0 ? '📅 ¡hoy!' : diasDl === 1 ? '📅 mañana' : `📅 ${diasDl} días`) : '📅 + fecha límite'}
-                                  </span>
-                                  {obj > 0 && (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                                      <div style={{ width: 60, height: 5, background: '#e0e7ff', borderRadius: 3, overflow: 'hidden' }}>
-                                        <div style={{ height: '100%', width: `${pctObj}%`, background: pctObj >= 100 ? '#059669' : '#818cf8', borderRadius: 3 }} />
-                                      </div>
-                                      <span style={{ fontSize: 12, color: pctObj >= 100 ? '#059669' : '#818cf8', fontFamily: 'DM Mono, monospace', fontWeight: 600 }}>{pctObj.toFixed(0)}%</span>
-                                    </div>
-                                  )}
-                                  {arrStr && <span style={{ fontSize: 11, color: '#059669', fontFamily: 'DM Mono, monospace' }}>{arrStr}</span>}
-                                </div>
+                                {arrStr && <div style={{ fontSize: 11, color: '#059669', fontFamily: 'DM Mono, monospace', marginTop: 2 }}>{arrStr}</div>}
                               </div>
                             </div>
                           </td>
@@ -736,6 +715,28 @@ export default function App({ session, onSignOut }) {
                               onFocus={e => { e.target.value = obj || '' }}
                               style={{ background: '#f5f7ff', border: '1px solid #c7d2fe', color: '#94a3b8', fontFamily: 'DM Mono, monospace', fontSize: 13, textAlign: 'right', padding: '5px 10px', borderRadius: 5, width: 110 }}
                             />
+                            {/* Deadline + % objetivo debajo del input */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
+                              <span onClick={() => { setFormDeadline({ catId: cat.id, catLabel: cat.label, fecha: dl || '' }); setModalDeadline(true) }}
+                                style={{
+                                  fontSize: 11, cursor: 'pointer', fontWeight: 600,
+                                  color: dl ? (diasDl <= 2 ? '#fff' : diasDl <= 7 ? '#92400e' : '#475569') : '#94a3b8',
+                                  padding: '2px 7px',
+                                  background: dl ? (diasDl <= 2 ? '#dc2626' : diasDl <= 7 ? '#fef3c7' : '#f1f5f9') : '#f8faff',
+                                  border: `1px solid ${dl ? (diasDl <= 2 ? '#dc2626' : diasDl <= 7 ? '#fcd34d' : '#e0e7ff') : '#e0e7ff'}`,
+                                  borderRadius: 5, fontFamily: 'DM Mono, monospace',
+                                }}>
+                                {dl ? (diasDl < 0 ? '⚠️ vencido' : diasDl === 0 ? '📅 ¡hoy!' : diasDl === 1 ? '📅 mañana' : `📅 ${diasDl}d`) : '📅 fecha'}
+                              </span>
+                              {obj > 0 && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <div style={{ width: 50, height: 8, background: '#e0e7ff', borderRadius: 4, overflow: 'hidden' }}>
+                                    <div style={{ height: '100%', width: `${pctObj}%`, background: pctObj >= 100 ? '#059669' : '#818cf8', borderRadius: 4 }} />
+                                  </div>
+                                  <span style={{ fontSize: 11, color: pctObj >= 100 ? '#059669' : '#818cf8', fontFamily: 'DM Mono, monospace', fontWeight: 700 }}>{pctObj.toFixed(0)}%</span>
+                                </div>
+                              )}
+                            </div>
                           </td>
                           <td style={{ padding: '12px 14px', textAlign: 'right' }}>
                             <input
@@ -747,8 +748,8 @@ export default function App({ session, onSignOut }) {
                           </td>
                           <td style={{ padding: '12px 14px', textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14 }}>
                             <div>{fmt(real)}</div>
-                            <div style={{ height: 4, background: '#e0e7ff', borderRadius: 2, overflow: 'hidden', marginTop: 4, width: 80, marginLeft: 'auto' }}>
-                              <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 2 }} />
+                            <div style={{ height: 8, background: '#e0e7ff', borderRadius: 4, overflow: 'hidden', marginTop: 5, width: 80, marginLeft: 'auto' }}>
+                              <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 4 }} />
                             </div>
                           </td>
                           <td style={{ padding: '12px 14px', textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 15, fontWeight: 700, color: dispColor }}>
