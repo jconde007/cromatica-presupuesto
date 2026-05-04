@@ -703,22 +703,29 @@ export default function App({ session, onSignOut }) {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                               <div style={{ width: 9, height: 9, borderRadius: '50%', background: cat.color, flexShrink: 0 }} />
                               <div style={{ flex: 1 }}>
-                                <div style={{ fontSize: 15, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                  {cat.label}
+                                <div style={{ fontSize: 15, fontWeight: 500 }}>{cat.label}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
                                   <span onClick={() => { setFormDeadline({ catId: cat.id, catLabel: cat.label, fecha: dl || '' }); setModalDeadline(true) }}
-                                    style={{ fontSize: 10, cursor: 'pointer', color: dlColor, padding: '1px 6px', background: dl ? `${dlColor}18` : '#f1f5f9', borderRadius: 3, fontFamily: 'DM Mono, monospace', fontWeight: 600 }}>
-                                    {dl ? (diasDl === 0 ? '📅 ¡hoy!' : diasDl > 0 ? `📅 ${diasDl}d` : '⚠️ vencido') : '+ fecha'}
+                                    style={{
+                                      fontSize: 12, cursor: 'pointer', fontWeight: 600,
+                                      color: dl ? (diasDl <= 2 ? '#fff' : diasDl <= 7 ? '#92400e' : '#475569') : '#94a3b8',
+                                      padding: '3px 8px',
+                                      background: dl ? (diasDl <= 2 ? '#dc2626' : diasDl <= 7 ? '#fef3c7' : '#f1f5f9') : '#f8faff',
+                                      border: `1px solid ${dl ? (diasDl <= 2 ? '#dc2626' : diasDl <= 7 ? '#fcd34d' : '#e0e7ff') : '#e0e7ff'}`,
+                                      borderRadius: 6, fontFamily: 'DM Mono, monospace',
+                                    }}>
+                                    {dl ? (diasDl < 0 ? '⚠️ vencido' : diasDl === 0 ? '📅 ¡hoy!' : diasDl === 1 ? '📅 mañana' : `📅 ${diasDl} días`) : '📅 + fecha límite'}
                                   </span>
-                                </div>
-                                {arrStr && <div style={{ fontSize: 11, color: '#059669', fontFamily: 'DM Mono, monospace' }}>{arrStr}</div>}
-                                {obj > 0 && (
-                                  <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <div style={{ width: 70, height: 3, background: '#e0e7ff', borderRadius: 2, overflow: 'hidden' }}>
-                                      <div style={{ height: '100%', width: `${pctObj}%`, background: pctObj >= 100 ? '#059669' : '#818cf8', borderRadius: 2 }} />
+                                  {obj > 0 && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                      <div style={{ width: 60, height: 5, background: '#e0e7ff', borderRadius: 3, overflow: 'hidden' }}>
+                                        <div style={{ height: '100%', width: `${pctObj}%`, background: pctObj >= 100 ? '#059669' : '#818cf8', borderRadius: 3 }} />
+                                      </div>
+                                      <span style={{ fontSize: 12, color: pctObj >= 100 ? '#059669' : '#818cf8', fontFamily: 'DM Mono, monospace', fontWeight: 600 }}>{pctObj.toFixed(0)}%</span>
                                     </div>
-                                    <span style={{ fontSize: 10, color: '#94a3b8', fontFamily: 'DM Mono, monospace' }}>{pctObj.toFixed(0)}% obj</span>
-                                  </div>
-                                )}
+                                  )}
+                                  {arrStr && <span style={{ fontSize: 11, color: '#059669', fontFamily: 'DM Mono, monospace' }}>{arrStr}</span>}
+                                </div>
                               </div>
                             </div>
                           </td>
