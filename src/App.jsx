@@ -125,6 +125,7 @@ export default function App({ session, onSignOut }) {
   const [activeTab, setActiveTab] = useState('presupuesto')
   const [notif, setNotif] = useState('')
   const [collapsedGroups, setCollapsedGroups] = useState(new Set())
+  const [filtroDisponible, setFiltroDisponible] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showReconciliar, setShowReconciliar] = useState(false)
   const [arrastres, setArrastres] = useState({})
@@ -656,7 +657,18 @@ export default function App({ session, onSignOut }) {
             </table>
 
             {/* GASTOS */}
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '24px 0 8px' }}>Gastos</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '24px 0 8px' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Gastos</div>
+              <button onClick={() => setFiltroDisponible(p => !p)} style={{
+                padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                background: filtroDisponible ? '#4f46e5' : 'none',
+                color: filtroDisponible ? '#fff' : '#94a3b8',
+                border: `1px solid ${filtroDisponible ? '#4f46e5' : '#c7d2fe'}`,
+                transition: 'all 0.15s'
+              }}>
+                {filtroDisponible ? '✓ Con dinero' : 'Ver con dinero'}
+              </button>
+            </div>
             <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 10, overflow: 'hidden' }}>
               <thead>
                 <tr style={{ background: '#f5f7ff' }}>
@@ -672,6 +684,14 @@ export default function App({ session, onSignOut }) {
                   const grupoAsignado = grupo.cats.reduce((s, c) => s + (asignados[c.id] || 0), 0)
                   const grupoGastado = grupo.cats.reduce((s, c) => s + (gastoActual[c.id] || 0), 0)
                   const grupoPresup = grupo.cats.reduce((s, c) => s + (presupuesto[c.id] || 0), 0)
+                  // Con filtro activo, ocultar grupos donde ninguna cat tiene dinero disponible
+                  if (filtroDisponible) {
+                    const tieneDisponible = grupo.cats.some(c => {
+                      const asig = (asignados[c.id] || 0) + (arrastres[c.id] || 0)
+                      return (asig - (gastoActual[c.id] || 0)) > 0
+                    })
+                    if (!tieneDisponible) return null
+                  }
                   return [
                     <tr key={`g-${gId}`} onClick={() => toggleGroup(gId)}
                       style={{ background: '#f8faff', cursor: 'pointer', borderBottom: '1px solid #e0e7ff' }}>
@@ -687,7 +707,12 @@ export default function App({ session, onSignOut }) {
                         </div>
                       </td>
                     </tr>,
-                    ...(!isCollapsed ? grupo.cats.map(cat => {
+                    ...(!isCollapsed ? grupo.cats.filter(cat => {
+                      if (!filtroDisponible) return true
+                      const asig = (asignados[cat.id] || 0) + (arrastres[cat.id] || 0)
+                      const real = gastoActual[cat.id] || 0
+                      return (asig - real) > 0
+                    }).map(cat => {
                       const obj = presupuesto[cat.id] || 0
                       const asig = (asignados[cat.id] || 0) + (arrastres[cat.id] || 0)
                       const real = gastoActual[cat.id] || 0
