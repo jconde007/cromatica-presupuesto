@@ -175,3 +175,20 @@ export async function getUltimaReconciliacion(mes, nombre) {
   const { data } = await supabase.from('cuentas').select('updated_at').eq('mes', mes).eq('nombre', nombre).single()
   return data?.updated_at || null
 }
+
+// ─── DEADLINES ────────────────────────────────────────────────────────────────
+
+export async function setDeadline(mes, categoria, deadline) {
+  const { error } = await supabase.from('presupuestos')
+    .upsert({ mes, categoria, deadline }, { onConflict: 'mes,categoria' })
+  if (error) throw error
+}
+
+export async function getDeadlines(mes) {
+  const { data } = await supabase.from('presupuestos')
+    .select('categoria, deadline')
+    .eq('mes', mes)
+    .not('deadline', 'is', null)
+  if (!data) return {}
+  return Object.fromEntries(data.map(r => [r.categoria, r.deadline]))
+}

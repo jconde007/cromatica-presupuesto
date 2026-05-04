@@ -9,6 +9,7 @@ import {
 import {
   getPresupuesto, setPresupuesto, getArrastres, cerrarMes,
   getAsignados, setAsignado,
+  getDeadlines, setDeadline,
   getTransacciones, addTransaccion, updateTransaccionCat, deleteTransaccion,
   getSaldosCuentas, setSaldoInicial, reconciliar, CUENTAS_DEFAULT,
   getClabeMap, saveClabe,
@@ -128,7 +129,10 @@ export default function App({ session, onSignOut }) {
   const [showReconciliar, setShowReconciliar] = useState(false)
   const [arrastres, setArrastres] = useState({})
   const [asignados, setAsignados] = useState({})
+  const [deadlines, setDeadlines] = useState({})
   const [clabeMap, setClabeMap] = useState({})
+  const [modalDeadline, setModalDeadline] = useState(false)
+  const [formDeadline, setFormDeadline] = useState({ catId: '', catLabel: '', fecha: '' })
 
   // Dynamic categories from Supabase (fallback to static while loading)
   const [catsGastoGrupos, setCatsGastoGrupos] = useState(CATS_GASTO_GRUPOS_DEFAULT)
@@ -170,13 +174,14 @@ export default function App({ session, onSignOut }) {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [pres, txs, arr, cts, asig, clMap] = await Promise.all([
+      const [pres, txs, arr, cts, asig, clMap, dlns] = await Promise.all([
         getPresupuesto(currentMonth),
         getTransacciones(currentMonth),
         getArrastres(currentMonth),
         getSaldosCuentas(currentMonth),
         getAsignados(currentMonth),
         getClabeMap(),
+        getDeadlines(currentMonth),
       ])
       setPresupuestoState(pres)
       setTransacciones(txs)
@@ -184,6 +189,7 @@ export default function App({ session, onSignOut }) {
       setCuentasState(cts)
       setAsignados(asig)
       setClabeMap(clMap)
+      setDeadlines(dlns)
     } catch (e) {
       notify('Error cargando datos: ' + e.message)
     }
@@ -346,6 +352,32 @@ export default function App({ session, onSignOut }) {
     try { await setAsignado(currentMonth, cat, monto) }
     catch (e) { notify('Error guardando: ' + e.message) }
   }
+
+  const handleDeadlineSave = async () => {
+    try {
+      await setDeadline(currentMonth, formDeadline.catId, formDeadline.fecha || null)
+      setDeadlines(prev => ({ ...prev, [formDeadline.catId]: formDeadline.fecha || null }))
+      setModalDeadline(false)
+      notify(`✓ Fecha límite guardada`)
+    } catch (e) { notify('Error: ' + e.message) }
+  }
+
+  // Deadline alerts — categorías con fecha próxima y sin suficiente asignado
+  const hoy = new Date()
+  const deadlineAlerts = catsGasto.filter(c => {
+    if (!deadlines[c.id]) return false
+    const dl = new Date(deadlines[c.id])
+    const diasRestantes = Math.ceil((dl - hoy) / 86400000)
+    const asig = asignados[c.id] || 0
+    const obj = presupuesto[c.id] || 0
+    return diasRestantes <= 7 && diasRestantes >= 0 && asig < obj
+  }).map(c => {
+    const dl = new Date(deadlines[c.id])
+    const diasRestantes = Math.ceil((dl - hoy) / 86400000)
+    const asig = asignados[c.id] || 0
+    const obj = presupuesto[c.id] || 0
+    return { ...c, diasRestantes, falta: obj - asig }
+  })
 
   const handleUpdateCat = async (id, categoria, concepto) => {
     try {
@@ -576,7 +608,19 @@ export default function App({ session, onSignOut }) {
               </div>
             )}
 
-            {/* INGRESOS */}
+            {/* DEADLINE ALERTS */}
+            {deadlineAlerts.length > 0 && (
+              <div style={{ background: '#fffbeb', border: '2px solid #fcd34d', borderRadius: 10, padding: '14px 18px', marginBottom: 16 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#92400e', marginBottom: 8 }}>⏰ Fechas límite próximas</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {deadlineAlerts.map(c => (
+                    <span key={c.id} style={{ background: c.diasRestantes <= 2 ? '#fee2e2' : '#fef3c7', color: c.diasRestantes <= 2 ? '#dc2626' : '#92400e', padding: '5px 12px', borderRadius: 20, fontSize: 12, fontFamily: 'DM Mono, monospace', fontWeight: 600 }}>
+                      {c.label} — {c.diasRestantes === 0 ? '¡hoy!' : `${c.diasRestantes}d`} — falta {fmt(c.falta)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '20px 0 8px' }}>Ingresos</div>
             <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 10, overflow: 'hidden' }}>
               <thead>
@@ -643,19 +687,38 @@ export default function App({ session, onSignOut }) {
                       const real = gastoActual[cat.id] || 0
                       const disp = asig - real
                       const pct = asig > 0 ? Math.min((real / asig) * 100, 100) : (real > 0 ? 100 : 0)
+                      const pctObj = obj > 0 ? Math.min(((asignados[cat.id] || 0) / obj) * 100, 100) : 0
                       const barColor = pct >= 100 ? '#ef4444' : pct >= 80 ? '#f97316' : '#3b82f6'
                       const dispColor = disp < 0 ? '#dc2626' : pct >= 80 ? '#d97706' : '#2563eb'
                       const arrStr = arrastres[cat.id] > 0 ? ` (+${fmt(arrastres[cat.id])} arrastrado)` : ''
+                      const dl = deadlines[cat.id]
+                      const dlDate = dl ? new Date(dl) : null
+                      const diasDl = dlDate ? Math.ceil((dlDate - hoy) / 86400000) : null
+                      const dlColor = diasDl !== null ? (diasDl <= 2 ? '#dc2626' : diasDl <= 7 ? '#d97706' : '#94a3b8') : '#94a3b8'
                       return (
                         <tr key={cat.id} style={{ borderBottom: '1px solid #f1f5ff' }}
                           onMouseEnter={e => e.currentTarget.style.background = '#f8faff'}
                           onMouseLeave={e => e.currentTarget.style.background = ''}>
                           <td style={{ padding: '12px 14px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 15, fontWeight: 500 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                               <div style={{ width: 9, height: 9, borderRadius: '50%', background: cat.color, flexShrink: 0 }} />
-                              <div>
-                                {cat.label}
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 15, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                  {cat.label}
+                                  <span onClick={() => { setFormDeadline({ catId: cat.id, catLabel: cat.label, fecha: dl || '' }); setModalDeadline(true) }}
+                                    style={{ fontSize: 10, cursor: 'pointer', color: dlColor, padding: '1px 6px', background: dl ? `${dlColor}18` : '#f1f5f9', borderRadius: 3, fontFamily: 'DM Mono, monospace', fontWeight: 600 }}>
+                                    {dl ? (diasDl === 0 ? '📅 ¡hoy!' : diasDl > 0 ? `📅 ${diasDl}d` : '⚠️ vencido') : '+ fecha'}
+                                  </span>
+                                </div>
                                 {arrStr && <div style={{ fontSize: 11, color: '#059669', fontFamily: 'DM Mono, monospace' }}>{arrStr}</div>}
+                                {obj > 0 && (
+                                  <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <div style={{ width: 70, height: 3, background: '#e0e7ff', borderRadius: 2, overflow: 'hidden' }}>
+                                      <div style={{ height: '100%', width: `${pctObj}%`, background: pctObj >= 100 ? '#059669' : '#818cf8', borderRadius: 2 }} />
+                                    </div>
+                                    <span style={{ fontSize: 10, color: '#94a3b8', fontFamily: 'DM Mono, monospace' }}>{pctObj.toFixed(0)}% obj</span>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </td>
@@ -664,7 +727,7 @@ export default function App({ session, onSignOut }) {
                               defaultValue={fmtInput(obj)}
                               onBlur={e => handlePresupuestoChange(cat.id, e.target.value)}
                               onFocus={e => { e.target.value = obj || '' }}
-                              style={{ background: '#f5f7ff', border: '1px solid #c7d2fe', color: '#94a3b8', fontFamily: 'DM Mono, monospace', fontSize: 13, textAlign: 'right', padding: '5px 10px', borderRadius: 5, width: 120 }}
+                              style={{ background: '#f5f7ff', border: '1px solid #c7d2fe', color: '#94a3b8', fontFamily: 'DM Mono, monospace', fontSize: 13, textAlign: 'right', padding: '5px 10px', borderRadius: 5, width: 110 }}
                             />
                           </td>
                           <td style={{ padding: '12px 14px', textAlign: 'right' }}>
@@ -672,7 +735,7 @@ export default function App({ session, onSignOut }) {
                               defaultValue={fmtInput(asignados[cat.id] || 0)}
                               onBlur={e => handleAsignado(cat.id, e.target.value)}
                               onFocus={e => { e.target.value = asignados[cat.id] || '' }}
-                              style={{ background: asig > 0 ? '#eff6ff' : '#f5f7ff', border: `1px solid ${asig > 0 ? '#93c5fd' : '#c7d2fe'}`, color: '#0f172a', fontFamily: 'DM Mono, monospace', fontSize: 13, textAlign: 'right', padding: '5px 10px', borderRadius: 5, width: 120, fontWeight: asig > 0 ? 600 : 400 }}
+                              style={{ background: asig > 0 ? '#eff6ff' : '#f5f7ff', border: `1px solid ${asig > 0 ? '#93c5fd' : '#c7d2fe'}`, color: '#0f172a', fontFamily: 'DM Mono, monospace', fontSize: 13, textAlign: 'right', padding: '5px 10px', borderRadius: 5, width: 110, fontWeight: asig > 0 ? 600 : 400 }}
                             />
                           </td>
                           <td style={{ padding: '12px 14px', textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14 }}>
@@ -869,6 +932,20 @@ export default function App({ session, onSignOut }) {
           onCatsChanged={() => { loadCategories(); loadData() }}
         />
       )}
+
+      {/* Deadline */}
+      <Modal open={modalDeadline} onClose={() => setModalDeadline(false)} title={`Fecha límite — ${formDeadline.catLabel}`} subtitle="La app te avisará cuando se acerque y no tengas suficiente asignado.">
+        <Field label="Fecha límite">
+          <input type="date" value={formDeadline.fecha} onChange={e => setFormDeadline(p => ({ ...p, fecha: e.target.value }))} style={inputStyle} />
+        </Field>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', marginTop: 20 }}>
+          <button onClick={() => { setFormDeadline(p => ({ ...p, fecha: '' })); handleDeadlineSave() }} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: 'none', border: '1px solid #fee2e2', color: '#dc2626', cursor: 'pointer' }}>Quitar fecha</button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => setModalDeadline(false)} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: 'none', border: '1px solid #c7d2fe', color: '#475569', cursor: 'pointer' }}>Cancelar</button>
+            <button onClick={handleDeadlineSave} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: '#4f46e5', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Guardar</button>
+          </div>
+        </div>
+      </Modal>
 
       <Notif msg={notif} onClose={() => setNotif('')} />
     </div>
