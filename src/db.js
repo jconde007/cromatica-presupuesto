@@ -26,8 +26,11 @@ export async function getCuentas(mes) {
 }
 
 export async function setSaldoInicial(mes, nombre, saldo_inicial) {
+  const tipo = CUENTAS_DEFAULT.find(c => c.nombre === nombre)?.tipo || 'debito'
+  // Para crédito, el saldo inicial siempre se guarda negativo (es deuda)
+  const montoFinal = tipo === 'credito' ? -Math.abs(saldo_inicial) : saldo_inicial
   const { error } = await supabase.from('cuentas')
-    .upsert({ mes, nombre, saldo_inicial, tipo: CUENTAS_DEFAULT.find(c => c.nombre === nombre)?.tipo || 'debito' }, { onConflict: 'nombre,mes' })
+    .upsert({ mes, nombre, saldo_inicial: montoFinal, tipo }, { onConflict: 'nombre,mes' })
   if (error) throw error
 }
 
@@ -42,8 +45,9 @@ export async function getSaldosCuentas(mes) {
     const txsCuenta = movs.filter(t => (t.cuenta || 'Banorte') === c.nombre)
     const ingresos = txsCuenta.filter(t => t.tipo === 'ingreso').reduce((s, t) => s + Number(t.monto), 0)
     const gastos = txsCuenta.filter(t => t.tipo === 'gasto').reduce((s, t) => s + Math.abs(Number(t.monto)), 0)
+    // Para crédito: saldo_inicial es negativo (-22432), gastos lo hacen más negativo, ingresos/pagos lo reducen
     const saldoActual = c.tipo === 'credito'
-      ? (c.saldo_inicial || 0) - gastos + ingresos  // crédito: empieza en 0, gastos lo hacen más negativo
+      ? (c.saldo_inicial || 0) - gastos + ingresos
       : (c.saldo_inicial || 0) + ingresos - gastos
     return { ...c, saldoActual }
   })
@@ -79,7 +83,7 @@ export async function cerrarMes(mes, gastoActual) {
   const { data: presData } = await supabase.from('presupuestos').select('categoria, monto, arrastre, asignado').eq('mes', mes)
   if (!presData) return
   const next = nextMonth(mes)
-  const { data: nextData } = await supabase.from('presupuestos').select('categoria, monto, arrastre, asignado').eq('mes', next)
+  const { data: nextData } = await supabase.from('presupuestos').select('categoria, monto, arrastre').eq('mes', next)
   const nextMap = nextData ? Object.fromEntries(nextData.map(r => [r.categoria, { monto: r.monto, arrastre: r.arrastre || 0 }])) : {}
   for (const row of presData) {
     const gastado = gastoActual[row.categoria] || 0
