@@ -126,6 +126,7 @@ export default function App({ session, onSignOut }) {
   const [notif, setNotif] = useState('')
   const [collapsedGroups, setCollapsedGroups] = useState(new Set())
   const [filtroDisponible, setFiltroDisponible] = useState(false)
+  const [inputAsignado, setInputAsignado] = useState({}) // { [cat.id]: string }
   const [showSettings, setShowSettings] = useState(false)
   const [showReconciliar, setShowReconciliar] = useState(false)
   const [arrastres, setArrastres] = useState({})
@@ -798,9 +799,11 @@ export default function App({ session, onSignOut }) {
                           </td>
                           <td style={{ padding: '12px 14px', textAlign: 'right' }}>
                             <input
-                              defaultValue={fmtInput(asignados[cat.id] || 0)}
-                              onBlur={e => handleAsignado(cat.id, e.target.value)}
-                              onFocus={e => { e.target.value = asignados[cat.id] || ''; e.target.select() }}
+                              value={inputAsignado[cat.id] ?? fmtInput(asignados[cat.id] || 0)}
+                              onChange={e => setInputAsignado(p => ({ ...p, [cat.id]: e.target.value }))}
+                              onFocus={e => { setInputAsignado(p => ({ ...p, [cat.id]: String(asignados[cat.id] || '') })); setTimeout(() => e.target.select(), 0) }}
+                              onBlur={e => { handleAsignado(cat.id, e.target.value); setInputAsignado(p => { const n = {...p}; delete n[cat.id]; return n }) }}
+                              onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                               style={{ background: asig > 0 ? '#eff6ff' : '#f5f7ff', border: `1px solid ${asig > 0 ? '#93c5fd' : '#c7d2fe'}`, color: '#0f172a', fontFamily: 'DM Mono, monospace', fontSize: 13, textAlign: 'right', padding: '5px 10px', borderRadius: 5, width: 110, fontWeight: asig > 0 ? 600 : 400 }}
                             />
                           </td>
