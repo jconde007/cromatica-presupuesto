@@ -347,8 +347,25 @@ export default function App({ session, onSignOut }) {
     } catch (e) { notify('Error: ' + e.message) }
   }
 
+  const calcAsignado = (val, current) => {
+    // Soporta operadores: +200, -100, *1.1, /2, o valor absoluto
+    const str = String(val).trim().replace(/,/g, '')
+    const opMatch = str.match(/^([+\-*/])(\d+\.?\d*)$/)
+    if (opMatch) {
+      const [, op, num] = opMatch
+      const n = parseFloat(num)
+      const base = current || 0
+      if (op === '+') return Math.max(0, base + n)
+      if (op === '-') return Math.max(0, base - n)
+      if (op === '*') return Math.max(0, base * n)
+      if (op === '/') return n !== 0 ? Math.max(0, base / n) : base
+    }
+    return parseFmt(val)
+  }
+
   const handleAsignado = async (cat, val) => {
-    const monto = parseFmt(val)
+    const current = asignados[cat] || 0
+    const monto = calcAsignado(val, current)
     setAsignados(prev => ({ ...prev, [cat]: monto }))
     try { await setAsignado(currentMonth, cat, monto) }
     catch (e) { notify('Error guardando: ' + e.message) }
@@ -774,7 +791,7 @@ export default function App({ session, onSignOut }) {
                             <input
                               defaultValue={fmtInput(asignados[cat.id] || 0)}
                               onBlur={e => handleAsignado(cat.id, e.target.value)}
-                              onFocus={e => { e.target.value = asignados[cat.id] || '' }}
+                              onFocus={e => { e.target.value = asignados[cat.id] || ''; e.target.select() }}
                               style={{ background: asig > 0 ? '#eff6ff' : '#f5f7ff', border: `1px solid ${asig > 0 ? '#93c5fd' : '#c7d2fe'}`, color: '#0f172a', fontFamily: 'DM Mono, monospace', fontSize: 13, textAlign: 'right', padding: '5px 10px', borderRadius: 5, width: 110, fontWeight: asig > 0 ? 600 : 400 }}
                             />
                           </td>
