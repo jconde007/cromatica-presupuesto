@@ -348,17 +348,26 @@ export default function App({ session, onSignOut }) {
   }
 
   const calcAsignado = (val, current) => {
-    // Soporta operadores: +200, -100, *1.1, /2, o valor absoluto
     const str = String(val).trim().replace(/,/g, '')
-    const opMatch = str.match(/^([+\-*/])(\d+\.?\d*)$/)
+    // Caso: "800+200", "1000-300", "500*2", "1000/4"
+    const exprMatch = str.match(/^(\d+\.?\d*)\s*([+\-*/])\s*(\d+\.?\d*)$/)
+    if (exprMatch) {
+      const a = parseFloat(exprMatch[1])
+      const op = exprMatch[2]
+      const b = parseFloat(exprMatch[3])
+      if (op === '+') return Math.max(0, a + b)
+      if (op === '-') return Math.max(0, a - b)
+      if (op === '*') return Math.max(0, a * b)
+      if (op === '/' && b !== 0) return Math.max(0, a / b)
+    }
+    // Caso: "+200", "-100" (solo operador + número, suma/resta al actual)
+    const opMatch = str.match(/^([+\-])(\d+\.?\d*)$/)
     if (opMatch) {
-      const [, op, num] = opMatch
-      const n = parseFloat(num)
+      const op = opMatch[1]
+      const n = parseFloat(opMatch[2])
       const base = current || 0
       if (op === '+') return Math.max(0, base + n)
       if (op === '-') return Math.max(0, base - n)
-      if (op === '*') return Math.max(0, base * n)
-      if (op === '/') return n !== 0 ? Math.max(0, base / n) : base
     }
     return parseFmt(val)
   }
