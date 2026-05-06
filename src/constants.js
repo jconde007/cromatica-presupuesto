@@ -71,14 +71,21 @@ export function categorizeAuto(concepto, tipo) {
     if (c.includes('PAYPAL') || c.includes('MERCADO PAGO') || c.includes('MERCADO*PAGO') || c.includes('SHOPIFY')) return 'Marketplace'
     return 'VentasDirectas'
   }
+  // Personal — antes de otros checks para evitar falsos positivos
+  if (c.includes('JORGE MANUEL CONDE') || c.includes('SUELDO JORGE') || c.includes('CONDE NAVAR')) return 'SueldoJorge'
+  if (c.includes('GUILLERMO CALV') || c.includes('BONO MENSUAL') || c.includes('SUELDO MEMO')) return 'SueldoMemo'
+  if (c.includes('SUELDO MONY') || c.includes('MONICA') || c.includes('MONY')) return 'SueldoMony'
+  // Consumibles
   if (c.includes('VINIL') || c.includes('SIO SUPPLY') || c.includes('SOL PLAST') || c.includes('SINO SUPPL') || c.includes('SUPPLY') || c.includes('CAPTOP') || c.includes('SIGNOS ROTULACIO') || c.includes('AVANC')) return 'Viniles'
   if (c.includes('TINTA') || c.includes('INK')) return 'Tintas'
   if (c.includes('SOBRE')) return 'Sobres'
   if (c.includes('CAJA')) return 'Cajas'
+  // Gastos variables
   if (c.includes('CABEZAL') || c.includes('PRINTHEAD')) return 'Cabezales'
   if (c.includes('REPARACION') || c.includes('SERVICIO TECNICO')) return 'Reparaciones'
   if (c.includes('ADECUACION') || c.includes('CONSTRUCCION')) return 'Adecuaciones'
   if (c.includes('YOLOENVIO') || c.includes('ENVIOSHOP') || c.includes('FEDEX') || c.includes('DHL') || c.includes('ESTAFETA')) return 'Envios'
+  // Operación fija
   if (c.includes('CFE')) return 'CFE'
   if (c.includes('TELMEX')) return 'Telmex'
   if (c.includes('ODOO')) return 'Odoo'
@@ -87,15 +94,14 @@ export function categorizeAuto(concepto, tipo) {
   if (c.includes('GOOGLE') && (c.includes('DRIVE') || c.includes('STORAGE') || c.includes('ONE'))) return 'GDrive'
   if (c.includes('SHOPIFY')) return 'Shopify'
   if (c.includes('TOTAL PLAY') || c.includes('TOTALPLAY')) return 'MantoPl'
-  if (c.includes('GUILLERMO CALV') || c.includes('BONO MENSUAL')) return 'SueldoMemo'
-  if (c.includes('SAT') || c.includes('IMPUESTO') || c.includes('REFERENCIADO') || c.includes('PAGO REFERENCIADO')) return 'SAT'
+  // Finanzas
+  if (c.includes('SAT') || c.includes('IMPUESTO') || c.includes('PAGO REFERENCIADO')) return 'SAT'
   return 'GastosVarios'
 }
 
 export function shouldExclude(concepto) {
   const c = concepto.toUpperCase()
   return (
-    c.includes('JORGE MANUEL CONDE') ||
     c.includes('AMERICAN EXPRES') ||
     c.includes('DISTRIBUIDORA VOLKSW') ||
     c.includes('VIDEOS VW')
