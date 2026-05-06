@@ -19,6 +19,32 @@ import { supabase } from './supabase'
 import './App.css'
 
 // ─── CSV PARSER ───────────────────────────────────────────────────────────────
+function simplifyConcepto(raw) {
+  // SPEI RECIBIDO: extraer CONCEPTO:
+  if (raw.includes('SPEI RECIBIDO')) {
+    const m = raw.match(/CONCEPTO:\s*(.+?)\s+REFERENCIA/i)
+    if (m) return m[1].trim()
+  }
+  // COMPRA ORDEN DE PAGO SPEI: extraer CONCEPTO: o BENEF:
+  if (raw.includes('COMPRA ORDEN DE PAGO SPEI') || raw.includes('ORDEN DE PAGO SPEI')) {
+    const mc = raw.match(/CONCEPTO:\s*(.+?)(?:\s+CVE|\s+REFERENCIA|$)/i)
+    if (mc) return mc[1].trim()
+    const mb = raw.match(/BENEF:\s*(.+?)(?:\s+\(DATO|\s+CVE|$)/i)
+    if (mb) return mb[1].trim()
+  }
+  // TEF / transferencia genérica
+  if (raw.includes('TEF BCO')) {
+    const mb = raw.match(/(?:TEF BCO:\d+\s+)(.+?)(?:\s+CTA\/CLABE|$)/i)
+    if (mb) return mb[1].trim()
+  }
+  return raw
+}
+
+function dedupeKey(tx) {
+  // Clave única: fecha + monto + tipo + primeros 60 chars del concepto RAW (antes de simplificar)
+  return `${tx.fecha}|${tx.monto}|${tx.tipo}|${tx.rawConcepto.substring(0, 60)}`
+}
+
 function parseCSV(text) {
   const lines = text.trim().split('\n')
   const txs = []
@@ -31,11 +57,11 @@ function parseCSV(text) {
     const lastComma1 = rest.lastIndexOf(',', lastComma2 - 1)
     const lastComma0 = rest.lastIndexOf(',', lastComma1 - 1)
     const fecha = line.substring(0, firstComma).trim()
-    const concepto = rest.substring(0, lastComma0).trim().replace(/^"|"$/g, '')
+    const rawConcepto = rest.substring(0, lastComma0).trim().replace(/^"|"$/g, '')
     const cargosStr = rest.substring(lastComma0 + 1, lastComma1).trim()
     const abonosStr = rest.substring(lastComma1 + 1, lastComma2).trim()
-    if (!fecha || !concepto) continue
-    if (shouldExclude(concepto)) continue
+    if (!fecha || !rawConcepto) continue
+    if (shouldExclude(rawConcepto)) continue
     const parts = fecha.split('/')
     if (parts.length !== 3) continue
     const isoDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
@@ -45,13 +71,9 @@ function parseCSV(text) {
     if (cargo === 0 && abono === 0) continue
     const tipo = abono > 0 ? 'ingreso' : 'gasto'
     const monto = abono > 0 ? abono : Math.abs(cargo)
-    const categoria = categorizeAuto(concepto, tipo)
-    let display = concepto
-    if (display.includes('SPEI RECIBIDO')) {
-      const m = display.match(/CONCEPTO:\s*(.+?)\s+REFERENCIA/i)
-      if (m) display = m[1].trim()
-    }
-    txs.push({ mes, fecha: isoDate, concepto: display, monto, tipo, categoria })
+    const display = simplifyConcepto(rawConcepto)
+    const categoria = categorizeAuto(display, tipo)
+    txs.push({ mes, fecha: isoDate, concepto: display, rawConcepto, monto, tipo, categoria })
   }
   return txs
 }
