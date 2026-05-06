@@ -110,10 +110,11 @@ export async function getTransacciones(mes) {
 }
 
 export async function addTransaccion(tx) {
+  const { rawConcepto, ...txClean } = tx
   const { error } = await supabase.from('transacciones').insert({
-    ...tx,
-    concepto: tx.concepto.substring(0, 200),
-    cuenta: tx.cuenta || 'Banorte'
+    ...txClean,
+    concepto: txClean.concepto.substring(0, 200),
+    cuenta: txClean.cuenta || 'Banorte'
   })
   if (error) throw error
   return true
