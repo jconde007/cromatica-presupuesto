@@ -312,10 +312,12 @@ export default function App({ session, onSignOut }) {
   }
 
   const totalAsignado = Object.values(asignados).reduce((a, b) => a + b, 0)
+  // Apartados que vinieron directo del Listo para asignar (no descontaron categoría)
+  const apartadosDesdeListo = apartados.filter(a => a.desde_categoria === '__listo__').reduce((s, a) => s + Number(a.monto), 0)
   // Listo para asignar:
-  // = saldo débito + gastos débito hechos - asignado - descubierto en tarjeta
-  // Los apartados manuales NO se restan aquí porque ya redujeron el asignado de su categoría origen
-  const paraAsignar = saldoDebito + gastosDebito - totalAsignado - creditDescubiertoTotal
+  // = saldo débito + gastos débito - asignado - descubierto en tarjeta - apartados directos
+  // Los apartados desde categorías NO se restan (ya redujeron el asignado de su categoría origen)
+  const paraAsignar = saldoDebito + gastosDebito - totalAsignado - creditDescubiertoTotal - apartadosDesdeListo
 
   const overspendCats = catsGasto.filter(c => {
     const real = gastoActual[c.id] || 0
@@ -534,18 +536,28 @@ export default function App({ session, onSignOut }) {
 
   const handleApartar = async () => {
     const monto = parseFloat(formApartar.monto)
-    if (!formApartar.desde) { notify('⚠️ Selecciona categoría origen'); return }
+    if (!formApartar.desde) { notify('⚠️ Selecciona origen'); return }
     if (!monto || monto <= 0) { notify('⚠️ Ingresa un monto válido'); return }
-    const asigDesde = asignados[formApartar.desde] || 0
-    if (monto > asigDesde) { notify('⚠️ No hay suficiente dinero en esa categoría'); return }
+    const desdeListo = formApartar.desde === '__listo__'
+    if (desdeListo) {
+      if (monto > paraAsignar) { notify(`⚠️ Solo tienes ${fmt(paraAsignar)} disponible para asignar`); return }
+    } else {
+      const asigDesde = asignados[formApartar.desde] || 0
+      const dispDesde = asigDesde - (gastoActual[formApartar.desde] || 0)
+      if (monto > dispDesde) { notify(`⚠️ Solo hay ${fmt(dispDesde)} disponible en esa categoría`); return }
+    }
     try {
-      // Mover dinero de la categoría → apartado
-      setAsignados(prev => ({ ...prev, [formApartar.desde]: asigDesde - monto }))
-      await setAsignado(currentMonth, formApartar.desde, asigDesde - monto)
-      await addApartadoTarjeta(currentMonth, formApartar.cuenta, monto, formApartar.desde)
+      if (!desdeListo) {
+        const asigDesde = asignados[formApartar.desde] || 0
+        setAsignados(prev => ({ ...prev, [formApartar.desde]: asigDesde - monto }))
+        await setAsignado(currentMonth, formApartar.desde, asigDesde - monto)
+      }
+      // Si viene del Listo para asignar, no se descuenta de ninguna categoría;
+      // el apartado simplemente reduce el paraAsignar al ser parte del cálculo
+      await addApartadoTarjeta(currentMonth, formApartar.cuenta, monto, desdeListo ? '__listo__' : formApartar.desde)
       setModalApartar(false)
-      const dLabel = catsGasto.find(c => c.id === formApartar.desde)?.label || formApartar.desde
-      notify(`✓ ${fmt(monto)} apartado de ${dLabel} → ${formApartar.cuenta}`)
+      const origenLabel = desdeListo ? 'Listo para asignar' : (catsGasto.find(c => c.id === formApartar.desde)?.label || formApartar.desde)
+      notify(`✓ ${fmt(monto)} apartado de ${origenLabel} → ${formApartar.cuenta}`)
       await loadData()
     } catch (e) { notify('Error: ' + e.message) }
   }
@@ -1171,9 +1183,10 @@ export default function App({ session, onSignOut }) {
 
       {/* Apartar dinero para tarjeta */}
       <Modal open={modalApartar} onClose={() => setModalApartar(false)} title={`Apartar dinero para ${formApartar.cuenta}`} subtitle="Mueve dinero de una categoría hacia el pago de la tarjeta.">
-        <Field label="Tomar de categoría">
+        <Field label="Tomar de">
           <select value={formApartar.desde} onChange={e => setFormApartar(p => ({ ...p, desde: e.target.value }))} style={selectStyle}>
             <option value="">— Selecciona —</option>
+            {paraAsignar > 0 && <option value="__listo__">💰 Listo para asignar — disponible: {fmt(paraAsignar)}</option>}
             {catsGasto.filter(c => c.id !== 'PagoMPTarjeta' && c.id !== 'PagoTDCMercadopago' && (asignados[c.id] || 0) - (gastoActual[c.id] || 0) > 0).map(c => {
               const disp = (asignados[c.id] || 0) - (gastoActual[c.id] || 0)
               return <option key={c.id} value={c.id}>{c.label} — disponible: {fmt(disp)}</option>
@@ -1267,7 +1280,7 @@ export default function App({ session, onSignOut }) {
                     </thead>
                     <tbody>
                       {apartadosCuenta.map((a, i) => {
-                        const catLabel = catsGasto.find(c => c.id === a.desde_categoria)?.label || a.desde_categoria
+                        const catLabel = a.desde_categoria === '__listo__' ? '💰 Listo para asignar' : (catsGasto.find(c => c.id === a.desde_categoria)?.label || a.desde_categoria)
                         return (
                           <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
                             <td style={{ padding: '6px 8px', fontFamily: 'DM Mono, monospace', color: '#64748b' }}>{(a.created_at || '').substring(5, 10)}</td>
