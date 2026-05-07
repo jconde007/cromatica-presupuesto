@@ -227,11 +227,28 @@ export default function App({ session, onSignOut }) {
   useEffect(() => { loadData() }, [loadData])
 
   // ── Computed ──
+  // Set de cuentas crédito para identificar gastos de tarjeta
+  const cuentasCredito = new Set(cuentas.filter(c => c.tipo === 'credito').map(c => c.nombre))
+
   const ingresoActual = {}
   const gastoActual = {}
+  // Gastos hechos con tarjeta de crédito (por categoría)
+  // Estos se "transfieren" automáticamente a PagoMPTarjeta para reservar el dinero del pago
+  let gastosEnCredito = 0
+  // Pagos a tarjetas (transferencias desde débito hacia crédito) — reducen lo reservado en PagoMPTarjeta
+  let pagosATarjeta = 0
   for (const tx of transacciones) {
-    if (tx.tipo === 'ingreso') ingresoActual[tx.categoria] = (ingresoActual[tx.categoria] || 0) + Number(tx.monto)
-    else gastoActual[tx.categoria] = (gastoActual[tx.categoria] || 0) + Math.abs(Number(tx.monto))
+    if (tx.tipo === 'ingreso') {
+      ingresoActual[tx.categoria] = (ingresoActual[tx.categoria] || 0) + Number(tx.monto)
+      // Ingreso a cuenta de crédito = pago de tarjeta (reduce deuda)
+      if (cuentasCredito.has(tx.cuenta)) pagosATarjeta += Number(tx.monto)
+    } else {
+      gastoActual[tx.categoria] = (gastoActual[tx.categoria] || 0) + Math.abs(Number(tx.monto))
+      // Gasto con tarjeta crédito = se reserva dinero para pagar la deuda
+      if (cuentasCredito.has(tx.cuenta) && tx.categoria !== 'PagoMPTarjeta') {
+        gastosEnCredito += Math.abs(Number(tx.monto))
+      }
+    }
   }
   const totalIngresos = Object.values(ingresoActual).reduce((a, b) => a + b, 0)
   const totalGastos = Object.values(gastoActual).reduce((a, b) => a + b, 0)
@@ -241,11 +258,18 @@ export default function App({ session, onSignOut }) {
 
   // Saldo neto = débito - crédito
   const saldoNeto = cuentas.reduce((s, c) => c.tipo === 'credito' ? s - Math.abs(c.saldoActual) : s + c.saldoActual, 0)
-  // Listo para asignar = solo cuentas débito (no incluye deuda de tarjetas)
   const saldoDebito = cuentas.filter(c => c.tipo === 'debito').reduce((s, c) => s + c.saldoActual, 0)
   const deudaCredito = cuentas.filter(c => c.tipo === 'credito').reduce((s, c) => s + Math.abs(c.saldoActual), 0)
+
+  // Reserva automática para pagar tarjeta de crédito = gastos en tarjeta - pagos hechos a tarjeta
+  // Este monto NO se asigna manualmente, viene de los gastos con tarjeta
+  const reservaPagoTarjeta = Math.max(0, gastosEnCredito - pagosATarjeta)
+
+  // Disponible efectivo en PagoMPTarjeta = lo asignado manualmente + lo reservado por gastos
+  // Lo gastado en esta categoría (pagos hechos) reduce el disponible
   const totalAsignado = Object.values(asignados).reduce((a, b) => a + b, 0)
-  const paraAsignar = saldoDebito - totalAsignado
+  // Listo para asignar = saldo débito - total asignado manualmente - reserva automática para tarjeta
+  const paraAsignar = saldoDebito - totalAsignado - reservaPagoTarjeta
 
   const overspendCats = catsGasto.filter(c => {
     const real = gastoActual[c.id] || 0
@@ -626,11 +650,17 @@ export default function App({ session, onSignOut }) {
 
             {/* DEUDA TARJETAS */}
             {deudaCredito > 0 && (
-              <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '0 0 12px 12px', padding: '12px 28px', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ fontSize: 13, color: '#92400e' }}>
-                  💳 Deuda en tarjetas de crédito — asigna dinero a <strong>"Pago MP Tarjeta"</strong> para irla pagando
+              <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '0 0 12px 12px', padding: '12px 28px', marginBottom: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ fontSize: 13, color: '#92400e' }}>
+                    💳 Deuda en tarjetas de crédito
+                    {reservaPagoTarjeta > 0 && <span style={{ marginLeft: 8, fontSize: 12, color: '#15803d' }}>· Reservado del mes: {fmt(reservaPagoTarjeta)}</span>}
+                  </div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, fontWeight: 700, color: '#dc2626' }}>-{fmt(deudaCredito)}</div>
                 </div>
-                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, fontWeight: 700, color: '#dc2626' }}>-{fmt(deudaCredito)}</div>
+                <div style={{ fontSize: 11, color: '#92400e', marginTop: 4, opacity: 0.8 }}>
+                  Los gastos con MP Tarjeta se reservan automáticamente en <strong>"Pago MP Tarjeta"</strong>
+                </div>
               </div>
             )}
 
@@ -758,12 +788,14 @@ export default function App({ session, onSignOut }) {
                     </tr>,
                     ...(!isCollapsed ? grupo.cats.filter(cat => {
                       if (!filtroDisponible) return true
-                      const asig = (asignados[cat.id] || 0) + (arrastres[cat.id] || 0)
+                      const reservaAuto = cat.id === 'PagoMPTarjeta' ? reservaPagoTarjeta : 0
+                      const asig = (asignados[cat.id] || 0) + (arrastres[cat.id] || 0) + reservaAuto
                       const real = gastoActual[cat.id] || 0
                       return (asig - real) > 0
                     }).map(cat => {
+                      const reservaAuto = cat.id === 'PagoMPTarjeta' ? reservaPagoTarjeta : 0
                       const obj = presupuesto[cat.id] || 0
-                      const asig = (asignados[cat.id] || 0) + (arrastres[cat.id] || 0)
+                      const asig = (asignados[cat.id] || 0) + (arrastres[cat.id] || 0) + reservaAuto
                       const real = gastoActual[cat.id] || 0
                       const disp = asig - real
                       const pct = asig > 0 ? Math.min((real / asig) * 100, 100) : (real > 0 ? 100 : 0)
