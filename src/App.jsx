@@ -261,10 +261,31 @@ export default function App({ session, onSignOut }) {
   const saldoDebito = cuentas.filter(c => c.tipo === 'debito').reduce((s, c) => s + c.saldoActual, 0)
   const deudaCredito = cuentas.filter(c => c.tipo === 'credito').reduce((s, c) => s + Math.abs(c.saldoActual), 0)
 
-  // Reserva automática para pagar tarjeta de crédito = gastos en tarjeta - pagos hechos a tarjeta
-  const reservaPagoTarjeta = Math.max(0, gastosEnCredito - pagosATarjeta)
+  // ── Lógica YNAB de tarjeta de crédito ──
+  // Cuando gastas con tarjeta en una categoría con dinero asignado:
+  //   - Dinero se "mueve" del sobre de la categoría → al sobre Pago MP Tarjeta
+  //   - El Listo para asignar NO se afecta
+  // Cuando gastas con tarjeta SIN dinero suficiente en la categoría:
+  //   - La parte cubierta se mueve normalmente
+  //   - La parte NO cubierta es overspending real (afecta Listo para asignar)
+  let creditCubierto = 0
+  let creditDescubierto = 0
+  for (const cat of catsGasto) {
+    if (cat.id === 'PagoMPTarjeta') continue
+    const gastoTarjeta = transacciones
+      .filter(t => t.tipo === 'gasto' && t.categoria === cat.id && cuentasCredito.has(t.cuenta))
+      .reduce((s, t) => s + Math.abs(Number(t.monto)), 0)
+    if (gastoTarjeta === 0) continue
+    const asig = (asignados[cat.id] || 0) + (arrastres[cat.id] || 0)
+    const cubierto = Math.min(gastoTarjeta, asig)
+    creditCubierto += cubierto
+    creditDescubierto += (gastoTarjeta - cubierto)
+  }
 
-  // Gastos que salieron de cuentas DÉBITO (no de tarjeta crédito)
+  // Reserva en Pago MP Tarjeta = lo que se movió de sobres - pagos hechos a tarjeta
+  const reservaPagoTarjeta = Math.max(0, creditCubierto - pagosATarjeta)
+
+  // Gastos que salieron de cuentas DÉBITO
   let gastosDebito = 0
   for (const tx of transacciones) {
     if (tx.tipo === 'gasto' && !cuentasCredito.has(tx.cuenta)) {
@@ -273,10 +294,9 @@ export default function App({ session, onSignOut }) {
   }
 
   const totalAsignado = Object.values(asignados).reduce((a, b) => a + b, 0)
-  // Listo para asignar (lógica YNAB):
-  // saldoActual_debito + lo que ya gastaste de débito - todo lo asignado - reserva para tarjeta
-  // Equivale a: saldoInicial + ingresos - asignado - reserva
-  const paraAsignar = saldoDebito + gastosDebito - totalAsignado - reservaPagoTarjeta
+  // Listo para asignar:
+  // = saldo débito actual + gastos débito - asignado manual - overspending de tarjeta no cubierto
+  const paraAsignar = saldoDebito + gastosDebito - totalAsignado - creditDescubierto
 
   const overspendCats = catsGasto.filter(c => {
     const real = gastoActual[c.id] || 0
