@@ -765,15 +765,23 @@ export default function App({ session, onSignOut }) {
             {/* GASTOS */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '24px 0 8px' }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Gastos</div>
-              <button onClick={() => setFiltroDisponible(p => !p)} style={{
-                padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                background: filtroDisponible ? '#4f46e5' : 'none',
-                color: filtroDisponible ? '#fff' : '#94a3b8',
-                border: `1px solid ${filtroDisponible ? '#4f46e5' : '#c7d2fe'}`,
-                transition: 'all 0.15s'
-              }}>
-                {filtroDisponible ? '✓ Con dinero' : 'Ver con dinero'}
-              </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => { setFormMover({ desde: '', hacia: '', monto: '' }); setModalMover(true) }} style={{
+                  padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  background: 'none', color: '#4f46e5', border: '1px solid #c7d2fe', transition: 'all 0.15s'
+                }}>
+                  ↔ Mover dinero
+                </button>
+                <button onClick={() => setFiltroDisponible(p => !p)} style={{
+                  padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  background: filtroDisponible ? '#4f46e5' : 'none',
+                  color: filtroDisponible ? '#fff' : '#94a3b8',
+                  border: `1px solid ${filtroDisponible ? '#4f46e5' : '#c7d2fe'}`,
+                  transition: 'all 0.15s'
+                }}>
+                  {filtroDisponible ? '✓ Con dinero' : 'Ver con dinero'}
+                </button>
+              </div>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 10, overflow: 'hidden' }}>
               <thead>
