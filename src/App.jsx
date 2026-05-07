@@ -163,7 +163,7 @@ export default function App({ session, onSignOut }) {
   const [deadlines, setDeadlines] = useState({})
   const [clabeMap, setClabeMap] = useState({})
   const [modalDeadline, setModalDeadline] = useState(false)
-  const [formDeadline, setFormDeadline] = useState({ catId: '', catLabel: '', fecha: '' })
+  const [formDeadline, setFormDeadline] = useState({ catId: '', catLabel: '', fecha: '', frecuencia: 'unica' })
 
   // Dynamic categories from Supabase (fallback to static while loading)
   const [catsGastoGrupos, setCatsGastoGrupos] = useState(CATS_GASTO_GRUPOS_DEFAULT)
@@ -477,24 +477,52 @@ export default function App({ session, onSignOut }) {
 
   const handleDeadlineSave = async () => {
     try {
-      await setDeadline(currentMonth, formDeadline.catId, formDeadline.fecha || null)
-      setDeadlines(prev => ({ ...prev, [formDeadline.catId]: formDeadline.fecha || null }))
+      const freq = formDeadline.frecuencia || 'unica'
+      await setDeadline(currentMonth, formDeadline.catId, formDeadline.fecha || null, freq)
+      setDeadlines(prev => ({ ...prev, [formDeadline.catId]: formDeadline.fecha ? { fecha: formDeadline.fecha, frecuencia: freq } : null }))
       setModalDeadline(false)
       notify(`✓ Fecha límite guardada`)
     } catch (e) { notify('Error: ' + e.message) }
   }
 
+  // Helper para obtener fecha y frecuencia de un deadline
+  function getDeadlineInfo(catId) {
+    const dl = deadlines[catId]
+    if (!dl) return null
+    if (typeof dl === 'string') return { fecha: dl, frecuencia: 'unica' }
+    return { fecha: dl.fecha, frecuencia: dl.frecuencia || 'unica' }
+  }
+
+  // Calcula la fecha efectiva del deadline considerando la frecuencia
+  // Si la fecha original ya pasó y es recurrente, avanza al siguiente periodo
+  function getNextDeadline(fechaStr, frecuencia) {
+    if (!fechaStr) return null
+    const fecha = new Date(fechaStr)
+    if (frecuencia === 'unica') return fecha
+    const ahora = new Date()
+    let next = new Date(fecha)
+    while (next < ahora) {
+      if (frecuencia === 'quincenal') next.setDate(next.getDate() + 15)
+      else if (frecuencia === 'mensual') next.setMonth(next.getMonth() + 1)
+      else break
+    }
+    return next
+  }
+
   // Deadline alerts — categorías con fecha próxima y sin suficiente asignado
   const hoy = new Date()
   const deadlineAlerts = catsGasto.filter(c => {
-    if (!deadlines[c.id]) return false
-    const dl = new Date(deadlines[c.id])
+    const info = getDeadlineInfo(c.id)
+    if (!info) return false
+    const dl = getNextDeadline(info.fecha, info.frecuencia)
+    if (!dl) return false
     const diasRestantes = Math.ceil((dl - hoy) / 86400000)
     const asig = asignados[c.id] || 0
     const obj = presupuesto[c.id] || 0
     return diasRestantes <= 7 && diasRestantes >= 0 && asig < obj
   }).map(c => {
-    const dl = new Date(deadlines[c.id])
+    const info = getDeadlineInfo(c.id)
+    const dl = getNextDeadline(info.fecha, info.frecuencia)
     const diasRestantes = Math.ceil((dl - hoy) / 86400000)
     const asig = asignados[c.id] || 0
     const obj = presupuesto[c.id] || 0
@@ -935,10 +963,13 @@ export default function App({ session, onSignOut }) {
                       const barColor = pct >= 100 ? '#ef4444' : pct >= 80 ? '#f97316' : '#3b82f6'
                       const dispColor = disp < 0 ? '#dc2626' : pct >= 80 ? '#d97706' : '#2563eb'
                       const arrStr = arrastres[cat.id] > 0 ? ` (+${fmt(arrastres[cat.id])} arrastrado)` : ''
-                      const dl = deadlines[cat.id]
-                      const dlDate = dl ? new Date(dl) : null
+                      const dlInfo = getDeadlineInfo(cat.id)
+                      const dl = dlInfo?.fecha
+                      const dlFreq = dlInfo?.frecuencia || 'unica'
+                      const dlDate = dlInfo ? getNextDeadline(dlInfo.fecha, dlInfo.frecuencia) : null
                       const diasDl = dlDate ? Math.ceil((dlDate - hoy) / 86400000) : null
                       const dlColor = diasDl !== null ? (diasDl <= 2 ? '#dc2626' : diasDl <= 7 ? '#d97706' : '#94a3b8') : '#94a3b8'
+                      const freqIcon = dlFreq === 'quincenal' ? '🔁' : dlFreq === 'mensual' ? '🔂' : '📅'
                       return (
                         <tr key={cat.id} style={{ borderBottom: '1px solid #f1f5ff' }}
                           onMouseEnter={e => e.currentTarget.style.background = '#f8faff'}
@@ -952,7 +983,7 @@ export default function App({ session, onSignOut }) {
                                   {arrStr && <div style={{ fontSize: 11, color: '#059669', fontFamily: 'DM Mono, monospace', marginTop: 2 }}>{arrStr}</div>}
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <span onClick={() => { setFormDeadline({ catId: cat.id, catLabel: cat.label, fecha: dl || '' }); setModalDeadline(true) }}
+                                  <span onClick={() => { setFormDeadline({ catId: cat.id, catLabel: cat.label, fecha: dl || '', frecuencia: dlFreq }); setModalDeadline(true) }}
                                     style={{
                                       fontSize: 11, cursor: 'pointer', fontWeight: 600,
                                       color: dl ? (diasDl <= 2 ? '#fff' : diasDl <= 7 ? '#92400e' : '#475569') : '#94a3b8',
@@ -961,7 +992,7 @@ export default function App({ session, onSignOut }) {
                                       border: `1px solid ${dl ? (diasDl <= 2 ? '#dc2626' : diasDl <= 7 ? '#fcd34d' : '#e0e7ff') : '#e0e7ff'}`,
                                       borderRadius: 5, fontFamily: 'DM Mono, monospace', whiteSpace: 'nowrap'
                                     }}>
-                                    {dl ? (diasDl < 0 ? '⚠️ vencido' : diasDl === 0 ? '📅 ¡hoy!' : diasDl === 1 ? '📅 mañana' : `📅 ${diasDl}d`) : '📅 fecha'}
+                                    {dl ? (diasDl < 0 ? '⚠️ vencido' : diasDl === 0 ? `${freqIcon} ¡hoy!` : diasDl === 1 ? `${freqIcon} mañana` : `${freqIcon} ${diasDl}d`) : '📅 fecha'}
                                   </span>
                                   {obj > 0 && (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -1365,11 +1396,18 @@ export default function App({ session, onSignOut }) {
 
       {/* Deadline */}
       <Modal open={modalDeadline} onClose={() => setModalDeadline(false)} title={`Fecha límite — ${formDeadline.catLabel}`} subtitle="La app te avisará cuando se acerque y no tengas suficiente asignado.">
-        <Field label="Fecha límite">
+        <Field label="Primera fecha">
           <input type="date" value={formDeadline.fecha} onChange={e => setFormDeadline(p => ({ ...p, fecha: e.target.value }))} style={inputStyle} />
         </Field>
+        <Field label="Frecuencia">
+          <select value={formDeadline.frecuencia || 'unica'} onChange={e => setFormDeadline(p => ({ ...p, frecuencia: e.target.value }))} style={selectStyle}>
+            <option value="unica">📅 Solo una vez</option>
+            <option value="quincenal">🔁 Cada 15 días (quincenal)</option>
+            <option value="mensual">🔂 Cada mes</option>
+          </select>
+        </Field>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', marginTop: 20 }}>
-          <button onClick={() => { setFormDeadline(p => ({ ...p, fecha: '' })); handleDeadlineSave() }} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: 'none', border: '1px solid #fee2e2', color: '#dc2626', cursor: 'pointer' }}>Quitar fecha</button>
+          <button onClick={() => { setFormDeadline(p => ({ ...p, fecha: '', frecuencia: 'unica' })); handleDeadlineSave() }} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: 'none', border: '1px solid #fee2e2', color: '#dc2626', cursor: 'pointer' }}>Quitar fecha</button>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={() => setModalDeadline(false)} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: 'none', border: '1px solid #c7d2fe', color: '#475569', cursor: 'pointer' }}>Cancelar</button>
             <button onClick={handleDeadlineSave} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: '#4f46e5', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Guardar</button>

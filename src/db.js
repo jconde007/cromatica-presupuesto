@@ -185,19 +185,20 @@ export async function getUltimaReconciliacion(mes, nombre) {
 
 // ─── DEADLINES ────────────────────────────────────────────────────────────────
 
-export async function setDeadline(mes, categoria, deadline) {
+export async function setDeadline(mes, categoria, deadline, frecuencia = 'unica') {
   const { error } = await supabase.from('presupuestos')
-    .upsert({ mes, categoria, deadline }, { onConflict: 'mes,categoria' })
+    .upsert({ mes, categoria, deadline, deadline_frecuencia: frecuencia }, { onConflict: 'mes,categoria' })
   if (error) throw error
 }
 
 export async function getDeadlines(mes) {
   const { data } = await supabase.from('presupuestos')
-    .select('categoria, deadline')
+    .select('categoria, deadline, deadline_frecuencia')
     .eq('mes', mes)
     .not('deadline', 'is', null)
   if (!data) return {}
-  return Object.fromEntries(data.map(r => [r.categoria, r.deadline]))
+  // Devuelve un objeto por categoría con { fecha, frecuencia }
+  return Object.fromEntries(data.map(r => [r.categoria, { fecha: r.deadline, frecuencia: r.deadline_frecuencia || 'unica' }]))
 }
 
 // ─── APARTADOS MANUALES PARA TARJETA DE CRÉDITO ──────────────────────────────
