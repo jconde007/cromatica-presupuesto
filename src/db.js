@@ -199,3 +199,49 @@ export async function getDeadlines(mes) {
   if (!data) return {}
   return Object.fromEntries(data.map(r => [r.categoria, r.deadline]))
 }
+
+// ─── APARTADOS MANUALES PARA TARJETA DE CRÉDITO ──────────────────────────────
+
+export async function getApartadosTarjeta(mes) {
+  const { data, error } = await supabase.from('apartados_tarjeta')
+    .select('*').eq('mes', mes)
+  if (error) throw error
+  return data || []
+}
+
+export async function addApartadoTarjeta(mes, cuenta, monto, desdeCategoria) {
+  const { error } = await supabase.from('apartados_tarjeta')
+    .insert({ mes, cuenta, monto, desde_categoria: desdeCategoria })
+  if (error) throw error
+}
+
+export async function deleteApartadoTarjeta(id) {
+  const { error } = await supabase.from('apartados_tarjeta').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ─── PAGAR TARJETA (TRANSFERENCIA ENTRE CUENTAS) ──────────────────────────────
+
+export async function pagarTarjeta(mes, fecha, cuentaDebito, cuentaCredito, monto) {
+  // Crea dos transacciones marcadas como transferencia para no contaminar ingresos/gastos del mes
+  const concepto = `Pago de ${cuentaCredito} desde ${cuentaDebito}`
+  const txGasto = {
+    mes, fecha, concepto, monto,
+    tipo: 'gasto',
+    categoria: '__transferencia__',
+    cuenta: cuentaDebito,
+    es_transferencia: true,
+  }
+  const txIngreso = {
+    mes, fecha, concepto, monto,
+    tipo: 'ingreso',
+    categoria: '__transferencia__',
+    cuenta: cuentaCredito,
+    es_transferencia: true,
+  }
+  const { error: e1 } = await supabase.from('transacciones').insert(txGasto)
+  if (e1) throw e1
+  const { error: e2 } = await supabase.from('transacciones').insert(txIngreso)
+  if (e2) throw e2
+}
+

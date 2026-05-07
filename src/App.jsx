@@ -13,6 +13,7 @@ import {
   getTransacciones, addTransaccion, updateTransaccionCat, deleteTransaccion,
   getSaldosCuentas, setSaldoInicial, reconciliar, CUENTAS_DEFAULT,
   getClabeMap, saveClabe,
+  getApartadosTarjeta, addApartadoTarjeta, pagarTarjeta,
 } from './db'
 import Settings from './Settings.jsx'
 import { supabase } from './supabase'
@@ -143,6 +144,11 @@ export default function App({ session, onSignOut }) {
   const [presupuesto, setPresupuestoState] = useState({})
   const [transacciones, setTransacciones] = useState([])
   const [cuentas, setCuentasState] = useState([])
+  const [apartados, setApartados] = useState([])
+  const [modalApartar, setModalApartar] = useState(false)
+  const [modalPagar, setModalPagar] = useState(false)
+  const [formApartar, setFormApartar] = useState({ cuenta: '', monto: '', desde: '' })
+  const [formPagar, setFormPagar] = useState({ cuentaCredito: '', cuentaDebito: 'Banorte', monto: '', fecha: '' })
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('presupuesto')
   const [notif, setNotif] = useState('')
@@ -198,7 +204,7 @@ export default function App({ session, onSignOut }) {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [pres, txs, arr, cts, asig, clMap, dlns] = await Promise.all([
+      const [pres, txs, arr, cts, asig, clMap, dlns, aps] = await Promise.all([
         getPresupuesto(currentMonth),
         getTransacciones(currentMonth),
         getArrastres(currentMonth),
@@ -206,6 +212,7 @@ export default function App({ session, onSignOut }) {
         getAsignados(currentMonth),
         getClabeMap(),
         getDeadlines(currentMonth),
+        getApartadosTarjeta(currentMonth),
       ])
       setPresupuestoState(pres)
       setTransacciones(txs)
@@ -214,6 +221,7 @@ export default function App({ session, onSignOut }) {
       setAsignados(asig)
       setClabeMap(clMap)
       setDeadlines(dlns)
+      setApartados(aps)
     } catch (e) {
       notify('Error cargando datos: ' + e.message)
     }
@@ -232,22 +240,21 @@ export default function App({ session, onSignOut }) {
 
   const ingresoActual = {}
   const gastoActual = {}
-  // Gastos hechos con tarjeta de crédito (por categoría)
-  // Estos se "transfieren" automáticamente a PagoMPTarjeta para reservar el dinero del pago
-  let gastosEnCredito = 0
-  // Pagos a tarjetas (transferencias desde débito hacia crédito) — reducen lo reservado en PagoMPTarjeta
-  let pagosATarjeta = 0
+  // Pagos a tarjetas por cuenta — para calcular pago disponible
+  const pagosPorCuenta = {}
   for (const tx of transacciones) {
+    // IGNORAR transferencias (pagos de tarjeta) en cálculos de ingresos/gastos del mes
+    if (tx.es_transferencia) {
+      // Pero sí trackear los pagos hechos a cada tarjeta
+      if (tx.tipo === 'ingreso' && cuentasCredito.has(tx.cuenta)) {
+        pagosPorCuenta[tx.cuenta] = (pagosPorCuenta[tx.cuenta] || 0) + Number(tx.monto)
+      }
+      continue
+    }
     if (tx.tipo === 'ingreso') {
       ingresoActual[tx.categoria] = (ingresoActual[tx.categoria] || 0) + Number(tx.monto)
-      // Ingreso a cuenta de crédito = pago de tarjeta (reduce deuda)
-      if (cuentasCredito.has(tx.cuenta)) pagosATarjeta += Number(tx.monto)
     } else {
       gastoActual[tx.categoria] = (gastoActual[tx.categoria] || 0) + Math.abs(Number(tx.monto))
-      // Gasto con tarjeta crédito = se reserva dinero para pagar la deuda
-      if (cuentasCredito.has(tx.cuenta) && tx.categoria !== 'PagoMPTarjeta') {
-        gastosEnCredito += Math.abs(Number(tx.monto))
-      }
     }
   }
   const totalIngresos = Object.values(ingresoActual).reduce((a, b) => a + b, 0)
@@ -262,32 +269,42 @@ export default function App({ session, onSignOut }) {
   const deudaCredito = cuentas.filter(c => c.tipo === 'credito').reduce((s, c) => s + Math.abs(c.saldoActual), 0)
 
   // ── Lógica YNAB de tarjeta de crédito ──
-  // Cuando gastas con tarjeta en una categoría con dinero asignado:
-  //   - Dinero se "mueve" del sobre de la categoría → al sobre Pago MP Tarjeta
-  //   - El Listo para asignar NO se afecta
-  // Cuando gastas con tarjeta SIN dinero suficiente en la categoría:
-  //   - La parte cubierta se mueve normalmente
-  //   - La parte NO cubierta es overspending real (afecta Listo para asignar)
-  let creditCubierto = 0
-  let creditDescubierto = 0
-  for (const cat of catsGasto) {
-    if (cat.id === 'PagoMPTarjeta') continue
-    const gastoTarjeta = transacciones
-      .filter(t => t.tipo === 'gasto' && t.categoria === cat.id && cuentasCredito.has(t.cuenta))
-      .reduce((s, t) => s + Math.abs(Number(t.monto)), 0)
-    if (gastoTarjeta === 0) continue
-    const asig = (asignados[cat.id] || 0) + (arrastres[cat.id] || 0)
-    const cubierto = Math.min(gastoTarjeta, asig)
-    creditCubierto += cubierto
-    creditDescubierto += (gastoTarjeta - cubierto)
+  // Por cada cuenta crédito, calcula:
+  //   - cubierto: gastos cubiertos por dinero asignado en categorías
+  //   - descubierto: gastos sin cobertura (overspending real)
+  //   - apartadosManuales: dinero apartado manualmente con botón "Apartar"
+  //   - pagosHechos: transferencias ya registradas hacia esta tarjeta
+  //   - pagoDisponible: cubierto + apartados - pagosHechos
+  const cuentasCreditoArr = cuentas.filter(c => c.tipo === 'credito')
+  const cuentaInfo = {} // { [nombreCuenta]: { cubierto, descubierto, apartados, pagos, disponible } }
+  let creditDescubiertoTotal = 0
+  for (const cc of cuentasCreditoArr) {
+    let cubierto = 0
+    let descubierto = 0
+    // Por categoría, ver gastos hechos con esta cuenta crédito
+    for (const cat of catsGasto) {
+      const gastoTarjeta = transacciones
+        .filter(t => !t.es_transferencia && t.tipo === 'gasto' && t.categoria === cat.id && t.cuenta === cc.nombre)
+        .reduce((s, t) => s + Math.abs(Number(t.monto)), 0)
+      if (gastoTarjeta === 0) continue
+      const asig = (asignados[cat.id] || 0) + (arrastres[cat.id] || 0)
+      cubierto += Math.min(gastoTarjeta, asig)
+      descubierto += Math.max(0, gastoTarjeta - asig)
+    }
+    const apartadosManuales = apartados.filter(a => a.cuenta === cc.nombre).reduce((s, a) => s + Number(a.monto), 0)
+    const pagosHechos = pagosPorCuenta[cc.nombre] || 0
+    const pagoDisponible = Math.max(0, cubierto + apartadosManuales - pagosHechos)
+    cuentaInfo[cc.nombre] = { cubierto, descubierto, apartadosManuales, pagosHechos, pagoDisponible }
+    creditDescubiertoTotal += descubierto
   }
 
-  // Reserva en Pago MP Tarjeta = lo que se movió de sobres - pagos hechos a tarjeta
-  const reservaPagoTarjeta = Math.max(0, creditCubierto - pagosATarjeta)
+  // Apartados manuales totales (salen del Listo para asignar porque movieron dinero de categorías)
+  const apartadosTotales = apartados.reduce((s, a) => s + Number(a.monto), 0)
 
-  // Gastos que salieron de cuentas DÉBITO
+  // Gastos que salieron de cuentas DÉBITO (sin contar transferencias)
   let gastosDebito = 0
   for (const tx of transacciones) {
+    if (tx.es_transferencia) continue
     if (tx.tipo === 'gasto' && !cuentasCredito.has(tx.cuenta)) {
       gastosDebito += Math.abs(Number(tx.monto))
     }
@@ -295,8 +312,9 @@ export default function App({ session, onSignOut }) {
 
   const totalAsignado = Object.values(asignados).reduce((a, b) => a + b, 0)
   // Listo para asignar:
-  // = saldo débito actual + gastos débito - asignado manual - overspending de tarjeta no cubierto
-  const paraAsignar = saldoDebito + gastosDebito - totalAsignado - creditDescubierto
+  // = saldo débito + gastos débito hechos - asignado - descubierto en tarjeta
+  // Los apartados manuales NO se restan aquí porque ya redujeron el asignado de su categoría origen
+  const paraAsignar = saldoDebito + gastosDebito - totalAsignado - creditDescubiertoTotal
 
   const overspendCats = catsGasto.filter(c => {
     const real = gastoActual[c.id] || 0
@@ -513,6 +531,38 @@ export default function App({ session, onSignOut }) {
     } catch (e) { notify('Error: ' + e.message) }
   }
 
+  const handleApartar = async () => {
+    const monto = parseFloat(formApartar.monto)
+    if (!formApartar.desde) { notify('⚠️ Selecciona categoría origen'); return }
+    if (!monto || monto <= 0) { notify('⚠️ Ingresa un monto válido'); return }
+    const asigDesde = asignados[formApartar.desde] || 0
+    if (monto > asigDesde) { notify('⚠️ No hay suficiente dinero en esa categoría'); return }
+    try {
+      // Mover dinero de la categoría → apartado
+      setAsignados(prev => ({ ...prev, [formApartar.desde]: asigDesde - monto }))
+      await setAsignado(currentMonth, formApartar.desde, asigDesde - monto)
+      await addApartadoTarjeta(currentMonth, formApartar.cuenta, monto, formApartar.desde)
+      setModalApartar(false)
+      const dLabel = catsGasto.find(c => c.id === formApartar.desde)?.label || formApartar.desde
+      notify(`✓ ${fmt(monto)} apartado de ${dLabel} → ${formApartar.cuenta}`)
+      await loadData()
+    } catch (e) { notify('Error: ' + e.message) }
+  }
+
+  const handlePagar = async () => {
+    const monto = parseFloat(formPagar.monto)
+    if (!monto || monto <= 0) { notify('⚠️ Ingresa un monto válido'); return }
+    if (!formPagar.fecha) { notify('⚠️ Ingresa fecha'); return }
+    if (formPagar.cuentaDebito === formPagar.cuentaCredito) { notify('⚠️ Las cuentas deben ser distintas'); return }
+    try {
+      const mes = formPagar.fecha.substring(0, 7)
+      await pagarTarjeta(mes, formPagar.fecha, formPagar.cuentaDebito, formPagar.cuentaCredito, monto)
+      setModalPagar(false)
+      notify(`✓ Pagaste ${fmt(monto)} a ${formPagar.cuentaCredito}`)
+      await loadData()
+    } catch (e) { notify('Error: ' + e.message) }
+  }
+
   const catOptions = (
     <>
       {catsGastoGrupos.map(g => (
@@ -592,7 +642,7 @@ export default function App({ session, onSignOut }) {
               <div style={{ background: '#fff', border: '1px solid #e0e7ff', borderTop: '3px solid #059669', borderRadius: 10, padding: '16px 18px' }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Ingresos del mes</div>
                 <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 22, fontWeight: 500, color: '#059669' }}>{fmt(totalIngresos)}</div>
-                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{transacciones.filter(t => t.tipo === 'ingreso').length} transacciones</div>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{transacciones.filter(t => t.tipo === 'ingreso' && !t.es_transferencia).length} transacciones</div>
               </div>
               <div style={{ background: '#fff', border: '1px solid #e0e7ff', borderTop: '3px solid #dc2626', borderRadius: 10, padding: '16px 18px' }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Gastos del mes</div>
@@ -675,21 +725,51 @@ export default function App({ session, onSignOut }) {
               </div>
             </div>
 
-            {/* DEUDA TARJETAS */}
-            {deudaCredito > 0 && (
-              <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '0 0 12px 12px', padding: '12px 28px', marginBottom: 20 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ fontSize: 13, color: '#92400e' }}>
-                    💳 Deuda en tarjetas de crédito
-                    {reservaPagoTarjeta > 0 && <span style={{ marginLeft: 8, fontSize: 12, color: '#15803d' }}>· Reservado del mes: {fmt(reservaPagoTarjeta)}</span>}
+            {/* TARJETAS DE CRÉDITO */}
+            {cuentasCreditoArr.map(cc => {
+              const info = cuentaInfo[cc.nombre] || { pagoDisponible: 0, descubierto: 0, apartadosManuales: 0, pagosHechos: 0, cubierto: 0 }
+              const deuda = Math.abs(cc.saldoActual)
+              return (
+                <div key={cc.nombre} style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 12, padding: '14px 20px', marginBottom: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: '#92400e' }}>💳 {cc.nombre}</div>
+                      <div style={{ fontSize: 11, color: '#92400e', opacity: 0.8, marginTop: 2 }}>Tarjeta de crédito</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 11, color: '#92400e', opacity: 0.7 }}>Deuda actual</div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, fontWeight: 700, color: '#dc2626' }}>-{fmt(deuda)}</div>
+                    </div>
                   </div>
-                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, fontWeight: 700, color: '#dc2626' }}>-{fmt(deudaCredito)}</div>
+                  <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', borderTop: '1px solid #fed7aa', paddingTop: 10 }}>
+                    <div style={{ flex: 1, minWidth: 120 }}>
+                      <div style={{ fontSize: 11, color: '#92400e', opacity: 0.7 }}>Pago disponible</div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, fontWeight: 700, color: info.pagoDisponible > 0 ? '#15803d' : '#94a3b8' }}>
+                        {fmt(info.pagoDisponible)}
+                      </div>
+                      <div style={{ fontSize: 10, color: '#92400e', opacity: 0.6, marginTop: 2 }}>
+                        Cubierto: {fmt(info.cubierto)} · Apartado: {fmt(info.apartadosManuales)} · Pagado: {fmt(info.pagosHechos)}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={() => { setFormApartar({ cuenta: cc.nombre, monto: '', desde: '' }); setModalApartar(true) }} style={{
+                        padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                        background: 'none', color: '#92400e', border: '1px solid #fed7aa'
+                      }}>↔ Apartar</button>
+                      <button onClick={() => { setFormPagar({ cuentaCredito: cc.nombre, cuentaDebito: 'Banorte', monto: String(info.pagoDisponible || ''), fecha: new Date().toISOString().split('T')[0] }); setModalPagar(true) }} style={{
+                        padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                        background: '#dc2626', color: '#fff', border: 'none'
+                      }}>💵 Pagar</button>
+                    </div>
+                  </div>
+                  {info.descubierto > 0 && (
+                    <div style={{ marginTop: 10, padding: 8, background: '#fef2f2', borderRadius: 7, fontSize: 12, color: '#dc2626' }}>
+                      ⚠️ Gastaste {fmt(info.descubierto)} con la tarjeta sin tener dinero asignado en las categorías
+                    </div>
+                  )}
                 </div>
-                <div style={{ fontSize: 11, color: '#92400e', marginTop: 4, opacity: 0.8 }}>
-                  Los gastos con MP Tarjeta se reservan automáticamente en <strong>"Pago MP Tarjeta"</strong>
-                </div>
-              </div>
-            )}
+              )
+            })}
 
             {/* OVERSPENDING BANNER */}
             {overspendCats.length > 0 && (
@@ -822,15 +902,15 @@ export default function App({ session, onSignOut }) {
                       </td>
                     </tr>,
                     ...(!isCollapsed ? grupo.cats.filter(cat => {
+                      // Ocultar categorías legacy de pago de tarjeta
+                      if (cat.id === 'PagoMPTarjeta' || cat.id === 'PagoTDCMercadopago') return false
                       if (!filtroDisponible) return true
-                      const reservaAuto = cat.id === 'PagoMPTarjeta' ? reservaPagoTarjeta : 0
-                      const asig = (asignados[cat.id] || 0) + (arrastres[cat.id] || 0) + reservaAuto
+                      const asig = (asignados[cat.id] || 0) + (arrastres[cat.id] || 0)
                       const real = gastoActual[cat.id] || 0
                       return (asig - real) > 0
                     }).map(cat => {
-                      const reservaAuto = cat.id === 'PagoMPTarjeta' ? reservaPagoTarjeta : 0
                       const obj = presupuesto[cat.id] || 0
-                      const asig = (asignados[cat.id] || 0) + (arrastres[cat.id] || 0) + reservaAuto
+                      const asig = (asignados[cat.id] || 0) + (arrastres[cat.id] || 0)
                       const real = gastoActual[cat.id] || 0
                       const disp = asig - real
                       const pct = asig > 0 ? Math.min((real / asig) * 100, 100) : (real > 0 ? 100 : 0)
@@ -1081,6 +1161,41 @@ export default function App({ session, onSignOut }) {
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
           <button onClick={() => setModalMover(false)} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: 'none', border: '1px solid #c7d2fe', color: '#475569', cursor: 'pointer' }}>Cancelar</button>
           <button onClick={handleMover} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: '#4f46e5', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Mover dinero</button>
+        </div>
+      </Modal>
+
+      {/* Apartar dinero para tarjeta */}
+      <Modal open={modalApartar} onClose={() => setModalApartar(false)} title={`Apartar dinero para ${formApartar.cuenta}`} subtitle="Mueve dinero de una categoría hacia el pago de la tarjeta.">
+        <Field label="Tomar de categoría">
+          <select value={formApartar.desde} onChange={e => setFormApartar(p => ({ ...p, desde: e.target.value }))} style={selectStyle}>
+            <option value="">— Selecciona —</option>
+            {catsGasto.filter(c => c.id !== 'PagoMPTarjeta' && c.id !== 'PagoTDCMercadopago' && (asignados[c.id] || 0) - (gastoActual[c.id] || 0) > 0).map(c => {
+              const disp = (asignados[c.id] || 0) - (gastoActual[c.id] || 0)
+              return <option key={c.id} value={c.id}>{c.label} — disponible: {fmt(disp)}</option>
+            })}
+          </select>
+        </Field>
+        <Field label="Monto ($MXN)"><input type="number" value={formApartar.monto} onChange={e => setFormApartar(p => ({ ...p, monto: e.target.value }))} placeholder="0.00" step="0.01" style={inputStyle} /></Field>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
+          <button onClick={() => setModalApartar(false)} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: 'none', border: '1px solid #c7d2fe', color: '#475569', cursor: 'pointer' }}>Cancelar</button>
+          <button onClick={handleApartar} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: '#4f46e5', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Apartar</button>
+        </div>
+      </Modal>
+
+      {/* Pagar tarjeta */}
+      <Modal open={modalPagar} onClose={() => setModalPagar(false)} title={`Pagar ${formPagar.cuentaCredito}`} subtitle="Registra una transferencia desde una cuenta débito hacia la tarjeta.">
+        <Field label="Fecha"><input type="date" value={formPagar.fecha} onChange={e => setFormPagar(p => ({ ...p, fecha: e.target.value }))} style={inputStyle} /></Field>
+        <Field label="Desde cuenta">
+          <select value={formPagar.cuentaDebito} onChange={e => setFormPagar(p => ({ ...p, cuentaDebito: e.target.value }))} style={selectStyle}>
+            {cuentas.filter(c => c.tipo === 'debito').map(c => (
+              <option key={c.nombre} value={c.nombre}>{c.nombre} — saldo: {fmt(c.saldoActual)}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Monto ($MXN)"><input type="number" value={formPagar.monto} onChange={e => setFormPagar(p => ({ ...p, monto: e.target.value }))} placeholder="0.00" step="0.01" style={inputStyle} /></Field>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
+          <button onClick={() => setModalPagar(false)} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: 'none', border: '1px solid #c7d2fe', color: '#475569', cursor: 'pointer' }}>Cancelar</button>
+          <button onClick={handlePagar} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: '#dc2626', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Pagar tarjeta</button>
         </div>
       </Modal>
 
