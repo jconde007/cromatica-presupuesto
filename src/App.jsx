@@ -146,6 +146,7 @@ export default function App({ session, onSignOut }) {
   const [cuentas, setCuentasState] = useState([])
   const [apartados, setApartados] = useState([])
   const [modalApartar, setModalApartar] = useState(false)
+  const [modalDetalleTarjeta, setModalDetalleTarjeta] = useState(null) // null o nombre de cuenta
   const [modalPagar, setModalPagar] = useState(false)
   const [formApartar, setFormApartar] = useState({ cuenta: '', monto: '', desde: '' })
   const [formPagar, setFormPagar] = useState({ cuentaCredito: '', cuentaDebito: 'Banorte', monto: '', fecha: '' })
@@ -752,6 +753,10 @@ export default function App({ session, onSignOut }) {
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={() => setModalDetalleTarjeta(cc.nombre)} style={{
+                        padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                        background: 'none', color: '#92400e', border: '1px solid #fed7aa'
+                      }}>👁 Detalle</button>
                       <button onClick={() => { setFormApartar({ cuenta: cc.nombre, monto: '', desde: '' }); setModalApartar(true) }} style={{
                         padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer',
                         background: 'none', color: '#92400e', border: '1px solid #fed7aa'
@@ -1181,6 +1186,145 @@ export default function App({ session, onSignOut }) {
           <button onClick={handleApartar} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: '#4f46e5', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Apartar</button>
         </div>
       </Modal>
+
+      {/* Detalle de tarjeta */}
+      {modalDetalleTarjeta && (() => {
+        const info = cuentaInfo[modalDetalleTarjeta] || {}
+        const txsCubiertos = transacciones.filter(t => !t.es_transferencia && t.tipo === 'gasto' && t.cuenta === modalDetalleTarjeta)
+        // Calcular cuánto cubrió cada tx
+        const desgloseCubierto = []
+        // Acumular asignado disponible por categoría para ir descontando
+        const asignadoRestante = {}
+        for (const cat of catsGasto) {
+          asignadoRestante[cat.id] = (asignados[cat.id] || 0) + (arrastres[cat.id] || 0)
+        }
+        // Ordenar por fecha para que los gastos antiguos consuman primero el asignado
+        const txsOrdenadas = [...txsCubiertos].sort((a, b) => a.fecha.localeCompare(b.fecha))
+        for (const tx of txsOrdenadas) {
+          const monto = Math.abs(Number(tx.monto))
+          const disp = asignadoRestante[tx.categoria] || 0
+          const cubierto = Math.min(monto, disp)
+          const descubierto = monto - cubierto
+          asignadoRestante[tx.categoria] = Math.max(0, disp - monto)
+          desgloseCubierto.push({ ...tx, cubierto, descubierto })
+        }
+        const apartadosCuenta = apartados.filter(a => a.cuenta === modalDetalleTarjeta)
+        const pagosTxs = transacciones.filter(t => t.es_transferencia && t.tipo === 'ingreso' && t.cuenta === modalDetalleTarjeta)
+
+        return (
+          <Modal open={true} onClose={() => setModalDetalleTarjeta(null)} title={`Detalle de pago — ${modalDetalleTarjeta}`} subtitle="De dónde sale el pago disponible.">
+            <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#15803d', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
+                  ✓ Gastos cubiertos por categorías ({fmt(info.cubierto || 0)})
+                </div>
+                {desgloseCubierto.length === 0 ? (
+                  <div style={{ fontSize: 12, color: '#94a3b8', padding: 8 }}>Sin gastos con esta tarjeta</div>
+                ) : (
+                  <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ background: '#f5f7ff' }}>
+                        <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, color: '#475569' }}>Fecha</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, color: '#475569' }}>Concepto</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, color: '#475569' }}>Categoría</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600, color: '#475569' }}>Cubierto</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {desgloseCubierto.map((tx, i) => {
+                        const catLabel = catsGasto.find(c => c.id === tx.categoria)?.label || tx.categoria
+                        return (
+                          <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '6px 8px', fontFamily: 'DM Mono, monospace', color: '#64748b' }}>{tx.fecha.substring(5)}</td>
+                            <td style={{ padding: '6px 8px', color: '#0f172a' }}>{tx.concepto.substring(0, 30)}</td>
+                            <td style={{ padding: '6px 8px', color: '#475569' }}>{catLabel}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'DM Mono, monospace', color: tx.cubierto > 0 ? '#15803d' : '#dc2626' }}>
+                              {fmt(tx.cubierto)}
+                              {tx.descubierto > 0 && <span style={{ color: '#dc2626', fontSize: 10, display: 'block' }}>(descubierto: {fmt(tx.descubierto)})</span>}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
+                  ↔ Apartados manuales ({fmt(info.apartadosManuales || 0)})
+                </div>
+                {apartadosCuenta.length === 0 ? (
+                  <div style={{ fontSize: 12, color: '#94a3b8', padding: 8 }}>Sin apartados manuales</div>
+                ) : (
+                  <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ background: '#f5f7ff' }}>
+                        <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, color: '#475569' }}>Fecha</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, color: '#475569' }}>Desde</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600, color: '#475569' }}>Monto</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {apartadosCuenta.map((a, i) => {
+                        const catLabel = catsGasto.find(c => c.id === a.desde_categoria)?.label || a.desde_categoria
+                        return (
+                          <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '6px 8px', fontFamily: 'DM Mono, monospace', color: '#64748b' }}>{(a.created_at || '').substring(5, 10)}</td>
+                            <td style={{ padding: '6px 8px', color: '#475569' }}>{catLabel}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'DM Mono, monospace', color: '#4f46e5' }}>{fmt(a.monto)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
+                  💵 Pagos ya hechos ({fmt(info.pagosHechos || 0)})
+                </div>
+                {pagosTxs.length === 0 ? (
+                  <div style={{ fontSize: 12, color: '#94a3b8', padding: 8 }}>Sin pagos registrados</div>
+                ) : (
+                  <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ background: '#f5f7ff' }}>
+                        <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, color: '#475569' }}>Fecha</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, color: '#475569' }}>Concepto</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600, color: '#475569' }}>Monto</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pagosTxs.map((tx, i) => (
+                        <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '6px 8px', fontFamily: 'DM Mono, monospace', color: '#64748b' }}>{tx.fecha.substring(5)}</td>
+                          <td style={{ padding: '6px 8px', color: '#475569' }}>{tx.concepto}</td>
+                          <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'DM Mono, monospace', color: '#dc2626' }}>{fmt(tx.monto)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <div style={{ marginTop: 16, padding: 12, background: '#f0fdf4', borderRadius: 8, borderLeft: '3px solid #15803d' }}>
+                <div style={{ fontSize: 11, color: '#15803d', fontWeight: 600 }}>PAGO DISPONIBLE TOTAL</div>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, fontWeight: 700, color: '#15803d', marginTop: 2 }}>
+                  {fmt(info.pagoDisponible || 0)}
+                </div>
+                <div style={{ fontSize: 10, color: '#15803d', opacity: 0.7, marginTop: 4 }}>
+                  = Cubierto ({fmt(info.cubierto || 0)}) + Apartado ({fmt(info.apartadosManuales || 0)}) − Pagado ({fmt(info.pagosHechos || 0)})
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+              <button onClick={() => setModalDetalleTarjeta(null)} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: '#4f46e5', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Cerrar</button>
+            </div>
+          </Modal>
+        )
+      })()}
 
       {/* Pagar tarjeta */}
       <Modal open={modalPagar} onClose={() => setModalPagar(false)} title={`Pagar ${formPagar.cuentaCredito}`} subtitle="Registra una transferencia desde una cuenta débito hacia la tarjeta.">
