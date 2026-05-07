@@ -262,14 +262,21 @@ export default function App({ session, onSignOut }) {
   const deudaCredito = cuentas.filter(c => c.tipo === 'credito').reduce((s, c) => s + Math.abs(c.saldoActual), 0)
 
   // Reserva automática para pagar tarjeta de crédito = gastos en tarjeta - pagos hechos a tarjeta
-  // Este monto NO se asigna manualmente, viene de los gastos con tarjeta
   const reservaPagoTarjeta = Math.max(0, gastosEnCredito - pagosATarjeta)
 
-  // Disponible efectivo en PagoMPTarjeta = lo asignado manualmente + lo reservado por gastos
-  // Lo gastado en esta categoría (pagos hechos) reduce el disponible
+  // Gastos que salieron de cuentas DÉBITO (no de tarjeta crédito)
+  let gastosDebito = 0
+  for (const tx of transacciones) {
+    if (tx.tipo === 'gasto' && !cuentasCredito.has(tx.cuenta)) {
+      gastosDebito += Math.abs(Number(tx.monto))
+    }
+  }
+
   const totalAsignado = Object.values(asignados).reduce((a, b) => a + b, 0)
-  // Listo para asignar = saldo débito - total asignado manualmente - reserva automática para tarjeta
-  const paraAsignar = saldoDebito - totalAsignado - reservaPagoTarjeta
+  // Listo para asignar (lógica YNAB):
+  // saldoActual_debito + lo que ya gastaste de débito - todo lo asignado - reserva para tarjeta
+  // Equivale a: saldoInicial + ingresos - asignado - reserva
+  const paraAsignar = saldoDebito + gastosDebito - totalAsignado - reservaPagoTarjeta
 
   const overspendCats = catsGasto.filter(c => {
     const real = gastoActual[c.id] || 0
