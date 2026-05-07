@@ -302,10 +302,10 @@ export default function App({ session, onSignOut }) {
   // Apartados manuales totales (salen del Listo para asignar porque movieron dinero de categorías)
   const apartadosTotales = apartados.reduce((s, a) => s + Number(a.monto), 0)
 
-  // Gastos que salieron de cuentas DÉBITO (sin contar transferencias)
+  // Gastos que salieron de cuentas DÉBITO
+  // SÍ contamos transferencias hacia tarjeta (porque ese dinero también salió de débito y bajó el saldo)
   let gastosDebito = 0
   for (const tx of transacciones) {
-    if (tx.es_transferencia) continue
     if (tx.tipo === 'gasto' && !cuentasCredito.has(tx.cuenta)) {
       gastosDebito += Math.abs(Number(tx.monto))
     }
