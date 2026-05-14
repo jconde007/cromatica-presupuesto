@@ -125,6 +125,11 @@ export async function updateTransaccionCat(id, categoria) {
   if (error) throw error
 }
 
+export async function marcarNoDuplicado(id) {
+  const { error } = await supabase.from('transacciones').update({ no_es_duplicado: true }).eq('id', id)
+  if (error) throw error
+}
+
 export async function deleteTransaccion(id) {
   const { error } = await supabase.from('transacciones').delete().eq('id', id)
   if (error) throw error

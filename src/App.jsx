@@ -10,7 +10,7 @@ import {
   getPresupuesto, setPresupuesto, getArrastres, cerrarMes,
   getAsignados, setAsignado,
   getDeadlines, setDeadline,
-  getTransacciones, addTransaccion, updateTransaccionCat, deleteTransaccion,
+  getTransacciones, addTransaccion, updateTransaccionCat, deleteTransaccion, marcarNoDuplicado,
   getSaldosCuentas, setSaldoInicial, reconciliar, CUENTAS_DEFAULT,
   getClabeMap, saveClabe,
   getApartadosTarjeta, addApartadoTarjeta, pagarTarjeta,
@@ -542,6 +542,13 @@ export default function App({ session, onSignOut }) {
     } catch (e) { notify('Error: ' + e.message) }
   }
 
+  const handleMarcarNoDuplicado = async (id) => {
+    try {
+      await marcarNoDuplicado(id)
+      await loadData()
+    } catch (e) { notify('Error: ' + e.message) }
+  }
+
   const handleMover = async () => {
     const monto = parseFloat(formMover.monto)
     if (!formMover.desde || !formMover.hacia) { notify('⚠️ Selecciona categorías'); return }
@@ -1062,9 +1069,10 @@ export default function App({ session, onSignOut }) {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {transacciones.map((tx, idx) => {
-                  // Duplicate detection
-                  const isDuplicate = transacciones.some((other, otherIdx) =>
+                  // Duplicate detection — ignora transacciones ya marcadas como no-duplicado
+                  const isDuplicate = !tx.no_es_duplicado && transacciones.some((other, otherIdx) =>
                     otherIdx !== idx &&
+                    !other.no_es_duplicado &&
                     other.monto === tx.monto &&
                     other.tipo === tx.tipo &&
                     Math.abs(new Date(other.fecha) - new Date(tx.fecha)) <= 86400000 * 3
@@ -1076,8 +1084,13 @@ export default function App({ session, onSignOut }) {
                       overflow: 'hidden'
                     }}>
                       {isDuplicate && (
-                        <div style={{ background: '#fef3c7', padding: '4px 14px', fontSize: 11, color: '#92400e', fontWeight: 600 }}>
-                          ⚠️ Posible duplicado — mismo monto en fechas cercanas. ¿Es correcto?
+                        <div style={{ background: '#fef3c7', padding: '4px 14px', fontSize: 11, color: '#92400e', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                          <span>⚠️ Posible duplicado — mismo monto en fechas cercanas. ¿Es correcto?</span>
+                          <button onClick={() => handleMarcarNoDuplicado(tx.id)}
+                            title="No es duplicado — ocultar aviso"
+                            style={{ background: 'transparent', border: '1px solid #92400e', color: '#92400e', fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                            ✕ No es duplicado
+                          </button>
                         </div>
                       )}
                       <div style={{ display: 'grid', gridTemplateColumns: '95px 1fr 200px 110px 70px', alignItems: 'start', gap: 12, padding: '11px 14px' }}>
