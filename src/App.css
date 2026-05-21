@@ -5,6 +5,7 @@
 body {
   background: #eef2ff;
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
 }
 
 ::-webkit-scrollbar { width: 6px; }
@@ -12,3 +13,187 @@ body {
 ::-webkit-scrollbar-thumb { background: #c7d2fe; border-radius: 3px; }
 
 input:focus, select:focus { outline: none; border-color: #4f46e5 !important; }
+
+/* ───────────────────────────────────────────────────────────────
+   MOBILE — iPhone / smartphone (≤ 720px)
+   Sobrescribe los estilos inline de App.jsx en pantallas chicas.
+   ─────────────────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  /* iOS: evitar zoom al hacer focus en inputs (font-size mínimo 16px) */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+
+  /* Header — reducir padding y permitir wrap de los botones */
+  .app-header {
+    padding: 12px 14px !important;
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+  }
+  .app-header-brand {
+    font-size: 13px !important;
+  }
+  .app-header-month {
+    order: 3;
+    width: 100%;
+    justify-content: center !important;
+  }
+  .app-header-actions {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    justify-content: flex-end;
+  }
+  .app-header-actions button,
+  .app-header-actions label {
+    padding: 8px 10px !important;
+    font-size: 12px !important;
+    min-height: 36px;
+  }
+
+  /* Contenedor principal — menos padding lateral */
+  .app-main {
+    padding: 14px 12px !important;
+  }
+
+  /* Tabs — permitir scroll horizontal */
+  .tabs-bar {
+    overflow-x: auto !important;
+    padding: 0 12px !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  .tabs-bar > div {
+    flex-shrink: 0;
+    padding: 12px 14px !important;
+  }
+  .tabs-bar::-webkit-scrollbar { display: none; }
+
+  /* Summary cards 4-col → 2-col */
+  .summary-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Cuentas 3-col → 1-col */
+  .cuentas-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Listo para asignar + saldos lado-a-lado → stack */
+  .listo-asignar-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Tarjeta crédito sección — stack */
+  .credito-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Categoría row (Objetivo/Asignado/Gastado/Disponible) — más compacto */
+  .cat-row {
+    grid-template-columns: 1fr 70px 70px 70px 70px !important;
+    gap: 6px !important;
+    padding: 10px 8px !important;
+    font-size: 12px !important;
+  }
+  .cat-row > * {
+    font-size: 12px !important;
+  }
+  .cat-row input {
+    font-size: 14px !important;
+    padding: 6px 6px !important;
+  }
+
+  /* Tabla de presupuesto — header */
+  .cat-table-header {
+    grid-template-columns: 1fr 70px 70px 70px 70px !important;
+    gap: 6px !important;
+    padding: 8px !important;
+    font-size: 10px !important;
+  }
+
+  /* Transacciones — stack en lugar de grid 5-col */
+  .tx-row {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    padding: 12px !important;
+  }
+  .tx-row .tx-fecha,
+  .tx-row .tx-concepto,
+  .tx-row .tx-cat,
+  .tx-row .tx-monto,
+  .tx-row .tx-delete {
+    width: 100%;
+    text-align: left !important;
+  }
+  .tx-row .tx-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  .tx-row .tx-monto {
+    text-align: right !important;
+    font-size: 16px !important;
+  }
+  .tx-row .tx-delete {
+    align-self: flex-end;
+  }
+
+  /* Por cuenta — summary 4-col → 2-col */
+  .por-cuenta-summary {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Por cuenta — tabla más compacta */
+  .por-cuenta-row, .por-cuenta-header {
+    grid-template-columns: 70px 1fr 90px 90px !important;
+    gap: 6px !important;
+    padding: 8px 10px !important;
+    font-size: 12px !important;
+  }
+  .por-cuenta-row > div {
+    font-size: 11px !important;
+  }
+  .por-cuenta-row .pc-balance,
+  .por-cuenta-row .pc-monto {
+    font-size: 12px !important;
+  }
+
+  /* Modal — un poco más de padding interno */
+  .modal-card {
+    padding: 20px !important;
+  }
+
+  /* Tabla de presupuesto — más compacta, columnas estrechas */
+  .budget-table {
+    font-size: 12px;
+  }
+  .budget-table th,
+  .budget-table td {
+    padding: 8px 6px !important;
+    font-size: 11px !important;
+  }
+  .budget-table input {
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 6px 4px !important;
+    font-size: 14px !important;
+  }
+  /* Esconder columna "Objetivo" en la tabla de Gastos para liberar espacio.
+     La tabla de Ingresos NO se toca (lleva la clase extra `budget-table-ingresos`). */
+  .budget-table:not(.budget-table-ingresos) th:nth-child(2),
+  .budget-table:not(.budget-table-ingresos) td:nth-child(2) {
+    display: none;
+  }
+}
+
+/* ───────────────────────────────────────────────────────────────
+   PWA — display standalone (cuando se abre desde Home Screen)
+   ─────────────────────────────────────────────────────────────── */
+@media (display-mode: standalone) {
+  body {
+    /* Respeta safe-area de iPhone (notch / barra inferior) */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}

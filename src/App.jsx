@@ -654,16 +654,16 @@ export default function App({ session, onSignOut }) {
     <div style={{ background: '#eef2ff', minHeight: '100vh', fontFamily: 'DM Sans, sans-serif', color: '#0f172a', fontSize: 15 }}>
 
       {/* HEADER */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 28px', background: '#fff', borderBottom: '2px solid #c7d2fe', position: 'sticky', top: 0, zIndex: 100 }}>
-        <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, fontWeight: 500, color: '#4f46e5', letterSpacing: '0.08em' }}>
+      <div className="app-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 28px', background: '#fff', borderBottom: '2px solid #c7d2fe', position: 'sticky', top: 0, zIndex: 100 }}>
+        <div className="app-header-brand" style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, fontWeight: 500, color: '#4f46e5', letterSpacing: '0.08em' }}>
           CROMÁTICA <span style={{ color: '#94a3b8' }}>/ presupuesto</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div className="app-header-month" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button onClick={() => changeMonth(-1)} style={{ background: 'none', border: '1px solid #c7d2fe', color: '#94a3b8', width: 28, height: 28, borderRadius: 6, cursor: 'pointer', fontSize: 14 }}>‹</button>
           <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#0f172a', minWidth: 120, textAlign: 'center', textTransform: 'capitalize' }}>{formatMonthLabel(currentMonth)}</div>
           <button onClick={() => changeMonth(1)} style={{ background: 'none', border: '1px solid #c7d2fe', color: '#94a3b8', width: 28, height: 28, borderRadius: 6, cursor: 'pointer', fontSize: 14 }}>›</button>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="app-header-actions" style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => { setFormIngreso({ fecha: new Date().toISOString().split('T')[0], concepto: '', monto: '', categoria: 'VentasDirectas' }); setModalIngreso(true) }} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'none', border: '1px solid #c7d2fe', color: '#475569' }}>+ Ingreso</button>
           <button onClick={() => { setFormGasto({ fecha: new Date().toISOString().split('T')[0], concepto: '', monto: '', categoria: 'Viniles', cuenta: 'MP Tarjeta' }); setModalGasto(true) }} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'none', border: '1px solid #c7d2fe', color: '#475569' }}>+ Gasto</button>
           <label style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', background: '#4f46e5', color: '#fff', border: 'none' }}>
@@ -679,7 +679,7 @@ export default function App({ session, onSignOut }) {
       </div>
 
       {/* TABS */}
-      <div style={{ display: 'flex', padding: '0 28px', background: '#fff', borderBottom: '2px solid #c7d2fe' }}>
+      <div className="tabs-bar" style={{ display: 'flex', padding: '0 28px', background: '#fff', borderBottom: '2px solid #c7d2fe' }}>
         {[
           { id: 'presupuesto', label: 'Presupuesto' },
           { id: 'transacciones', label: 'Transacciones' },
@@ -694,13 +694,13 @@ export default function App({ session, onSignOut }) {
         ))}
       </div>
 
-      <div style={{ padding: '24px 28px', maxWidth: 1100, margin: '0 auto' }}>
+      <div className="app-main" style={{ padding: '24px 28px', maxWidth: 1100, margin: '0 auto' }}>
 
         {/* ── TAB: PRESUPUESTO ── */}
         {activeTab === 'presupuesto' && (
           <>
             {/* SUMMARY CARDS */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 16 }}>
+            <div className="summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 16 }}>
               <div style={{ background: '#fff', border: '1px solid #e0e7ff', borderTop: '3px solid #059669', borderRadius: 10, padding: '16px 18px' }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Ingresos del mes</div>
                 <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 22, fontWeight: 500, color: '#059669' }}>{fmt(totalIngresos)}</div>
@@ -724,7 +724,7 @@ export default function App({ session, onSignOut }) {
             </div>
 
             {/* CUENTAS */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 16 }}>
+            <div className="cuentas-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 16 }}>
               {cuentas.map(c => {
                 const hoy = new Date().toISOString().split('T')[0]
                 const updatedAt = c.updated_at ? new Date(c.updated_at) : null
@@ -756,14 +756,14 @@ export default function App({ session, onSignOut }) {
             </div>
 
             {/* BANNER LISTO PARA ASIGNAR — estilo YNAB */}
-            <div style={{
+            <div className="listo-asignar-banner" style={{
               borderRadius: 12,
               marginBottom: deudaCredito > 0 ? 0 : 20,
               background: paraAsignar > 0 ? 'linear-gradient(135deg, #059669, #10b981)' :
                           paraAsignar >= -1 ? 'linear-gradient(135deg, #4f46e5, #7c3aed)' :
                           'linear-gradient(135deg, #dc2626, #ef4444)',
               padding: '20px 28px',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
               boxShadow: paraAsignar > 0 ? '0 4px 20px #05966930' : paraAsignar < 0 ? '0 4px 20px #dc262630' : '0 4px 20px #4f46e530'
             }}>
               <div>
@@ -881,7 +881,7 @@ export default function App({ session, onSignOut }) {
               </div>
             )}
             <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '20px 0 8px' }}>Ingresos</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 10, overflow: 'hidden' }}>
+            <table className="budget-table budget-table-ingresos" style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 10, overflow: 'hidden' }}>
               <thead>
                 <tr style={{ background: '#f5f7ff' }}>
                   {['Categoría', 'Real del mes', '', ''].map((h, i) => (
@@ -929,7 +929,7 @@ export default function App({ session, onSignOut }) {
                 </button>
               </div>
             </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 10, overflow: 'hidden' }}>
+            <table className="budget-table" style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 10, overflow: 'hidden' }}>
               <thead>
                 <tr style={{ background: '#f5f7ff' }}>
                   {['Categoría', 'Objetivo', 'Asignado', 'Gastado', 'Disponible'].map((h, i) => (
@@ -1118,17 +1118,17 @@ export default function App({ session, onSignOut }) {
                           </button>
                         </div>
                       )}
-                      <div style={{ display: 'grid', gridTemplateColumns: '95px 1fr 200px 110px 70px', alignItems: 'start', gap: 12, padding: '11px 14px' }}>
-                        <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#475569', fontWeight: 500, paddingTop: 2 }}>
+                      <div className="tx-row" style={{ display: 'grid', gridTemplateColumns: '95px 1fr 200px 110px 70px', alignItems: 'start', gap: 12, padding: '11px 14px' }}>
+                        <div className="tx-fecha" style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#475569', fontWeight: 500, paddingTop: 2 }}>
                           {tx.fecha.split('-').reverse().join('/')}
                         </div>
-                        <div style={{ fontSize: 13, color: '#0f172a', lineHeight: 1.4, wordBreak: 'break-word' }}>
+                        <div className="tx-concepto" style={{ fontSize: 13, color: '#0f172a', lineHeight: 1.4, wordBreak: 'break-word' }}>
                           {tx.concepto}
                           {tx.cuenta && tx.cuenta !== 'Banorte' && (
                             <span style={{ marginLeft: 6, fontSize: 10, background: '#e0e7ff', color: '#4f46e5', padding: '1px 5px', borderRadius: 3, fontWeight: 600 }}>{tx.cuenta}</span>
                           )}
                         </div>
-                        <select value={tx.categoria} onChange={e => handleUpdateCat(tx.id, e.target.value, tx.concepto)}
+                        <select className="tx-cat" value={tx.categoria} onChange={e => handleUpdateCat(tx.id, e.target.value, tx.concepto)}
                           style={{ background: '#f5f7ff', border: '1px solid #c7d2fe', color: '#0f172a', fontSize: 12, padding: '4px 7px', borderRadius: 5, width: '100%', cursor: 'pointer' }}>
                           <optgroup label="↑ Ingresos">
                             {catsIngreso.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
@@ -1139,10 +1139,10 @@ export default function App({ session, onSignOut }) {
                             </optgroup>
                           ))}
                         </select>
-                        <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, fontWeight: 600, textAlign: 'right', color: tx.tipo === 'ingreso' ? '#059669' : '#dc2626', paddingTop: 2 }}>
+                        <div className="tx-monto" style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, fontWeight: 600, textAlign: 'right', color: tx.tipo === 'ingreso' ? '#059669' : '#dc2626', paddingTop: 2 }}>
                           {tx.tipo === 'ingreso' ? '+' : '-'}{fmt(tx.monto)}
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 2 }}>
+                        <div className="tx-delete" style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 2 }}>
                           <button onClick={() => handleDeleteTx(tx.id)}
                             style={{ background: 'none', border: '1px solid #fee2e2', color: '#dc2626', padding: '4px 8px', borderRadius: 5, cursor: 'pointer', fontSize: 12 }}>✕</button>
                         </div>
@@ -1192,7 +1192,7 @@ export default function App({ session, onSignOut }) {
                 <div style={{ fontSize: 13, color: '#475569' }}>{txsCuenta.length} movimientos</div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
+              <div className="por-cuenta-summary" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
                 <div style={{ background: '#fff', padding: 14, borderRadius: 8, border: '1px solid #e0e7ff' }}>
                   <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Saldo inicial</div>
                   <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, fontWeight: 600, color: saldoInicial < 0 ? '#dc2626' : '#0f172a' }}>{saldoInicial < 0 ? '-' : ''}{fmt(Math.abs(saldoInicial))}</div>
@@ -1219,14 +1219,14 @@ export default function App({ session, onSignOut }) {
                 </div>
               ) : (
                 <div style={{ background: '#fff', borderRadius: 8, border: '1px solid #e0e7ff', overflow: 'hidden' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '95px 1fr 120px 130px', gap: 12, padding: '10px 14px', background: '#f5f7ff', borderBottom: '1px solid #e0e7ff', fontSize: 11, color: '#475569', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  <div className="por-cuenta-header" style={{ display: 'grid', gridTemplateColumns: '95px 1fr 120px 130px', gap: 12, padding: '10px 14px', background: '#f5f7ff', borderBottom: '1px solid #e0e7ff', fontSize: 11, color: '#475569', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                     <div>Fecha</div>
                     <div>Concepto</div>
                     <div style={{ textAlign: 'right' }}>Monto</div>
                     <div style={{ textAlign: 'right' }}>Saldo</div>
                   </div>
                   {rows.map(({ tx, balance }) => (
-                    <div key={tx.id} style={{ display: 'grid', gridTemplateColumns: '95px 1fr 120px 130px', gap: 12, padding: '10px 14px', borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
+                    <div key={tx.id} className="por-cuenta-row" style={{ display: 'grid', gridTemplateColumns: '95px 1fr 120px 130px', gap: 12, padding: '10px 14px', borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
                       <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#475569', fontWeight: 500 }}>
                         {tx.fecha.split('-').reverse().join('/')}
                       </div>
@@ -1236,10 +1236,10 @@ export default function App({ session, onSignOut }) {
                           <span style={{ marginLeft: 6, fontSize: 10, background: '#e0e7ff', color: '#4f46e5', padding: '1px 5px', borderRadius: 3, fontWeight: 600 }}>transferencia</span>
                         )}
                       </div>
-                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, fontWeight: 600, textAlign: 'right', color: tx.tipo === 'ingreso' ? '#059669' : '#dc2626' }}>
+                      <div className="pc-monto" style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, fontWeight: 600, textAlign: 'right', color: tx.tipo === 'ingreso' ? '#059669' : '#dc2626' }}>
                         {tx.tipo === 'ingreso' ? '+' : '-'}{fmt(tx.monto)}
                       </div>
-                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, fontWeight: 700, textAlign: 'right', color: balance < 0 ? '#dc2626' : '#0f172a' }}>
+                      <div className="pc-balance" style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, fontWeight: 700, textAlign: 'right', color: balance < 0 ? '#dc2626' : '#0f172a' }}>
                         {balance < 0 ? '-' : ''}{fmt(Math.abs(balance))}
                       </div>
                     </div>
