@@ -553,19 +553,27 @@ export default function App({ session, onSignOut }) {
 
   const handleMover = async () => {
     const monto = parseFloat(formMover.monto)
-    if (!formMover.desde || !formMover.hacia) { notify('⚠️ Selecciona categorías'); return }
-    if (formMover.desde === formMover.hacia) { notify('⚠️ Las categorías deben ser distintas'); return }
+    if (!formMover.desde || !formMover.hacia) { notify('⚠️ Selecciona origen y destino'); return }
+    if (formMover.desde === formMover.hacia) { notify('⚠️ Origen y destino deben ser distintos'); return }
     if (!monto || monto <= 0) { notify('⚠️ Ingresa un monto válido'); return }
+    const desdeListo = formMover.desde === '__listo__'
     try {
-      const asigDesde = asignados[formMover.desde] || 0
       const asigHacia = asignados[formMover.hacia] || 0
-      setAsignados(prev => ({ ...prev, [formMover.desde]: asigDesde - monto, [formMover.hacia]: asigHacia + monto }))
-      await Promise.all([
-        setAsignado(currentMonth, formMover.desde, asigDesde - monto),
-        setAsignado(currentMonth, formMover.hacia, asigHacia + monto),
-      ])
+      if (desdeListo) {
+        // Tomar de Listo para asignar: solo aumenta el destino (paraAsignar baja solo porque sube totalAsignado)
+        if (monto > paraAsignar) { notify(`⚠️ Solo tienes ${fmt(paraAsignar)} disponible para asignar`); return }
+        setAsignados(prev => ({ ...prev, [formMover.hacia]: asigHacia + monto }))
+        await setAsignado(currentMonth, formMover.hacia, asigHacia + monto)
+      } else {
+        const asigDesde = asignados[formMover.desde] || 0
+        setAsignados(prev => ({ ...prev, [formMover.desde]: asigDesde - monto, [formMover.hacia]: asigHacia + monto }))
+        await Promise.all([
+          setAsignado(currentMonth, formMover.desde, asigDesde - monto),
+          setAsignado(currentMonth, formMover.hacia, asigHacia + monto),
+        ])
+      }
       setModalMover(false)
-      const dLabel = catsGasto.find(c => c.id === formMover.desde)?.label || formMover.desde
+      const dLabel = desdeListo ? 'Listo para asignar' : (catsGasto.find(c => c.id === formMover.desde)?.label || formMover.desde)
       const hLabel = catsGasto.find(c => c.id === formMover.hacia)?.label || formMover.hacia
       notify(`✓ ${fmt(monto)} movido de ${dLabel} → ${hLabel}`)
     } catch (e) { notify('Error: ' + e.message) }
@@ -1316,6 +1324,8 @@ export default function App({ session, onSignOut }) {
       <Modal open={modalMover} onClose={() => setModalMover(false)} title="Mover dinero entre categorías" subtitle="Cubre el overspending tomando presupuesto de otra categoría.">
         <Field label="Tomar de">
           <select value={formMover.desde} onChange={e => setFormMover(p => ({ ...p, desde: e.target.value }))} style={selectStyle}>
+            <option value="">— Selecciona —</option>
+            {paraAsignar > 0 && <option value="__listo__">💰 Listo para asignar — disponible: {fmt(paraAsignar)}</option>}
             {catsGasto.filter(c => (asignados[c.id] || 0) - (gastoActual[c.id] || 0) > 0).map(c => {
               const disp = (asignados[c.id] || 0) - (gastoActual[c.id] || 0)
               return <option key={c.id} value={c.id}>{c.label} — disponible: {fmt(disp)}</option>
