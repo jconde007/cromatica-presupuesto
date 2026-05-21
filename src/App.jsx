@@ -155,6 +155,8 @@ export default function App({ session, onSignOut }) {
   const [notif, setNotif] = useState('')
   const [collapsedGroups, setCollapsedGroups] = useState(new Set())
   const [filtroDisponible, setFiltroDisponible] = useState(false)
+  const [filtroCuentaTx, setFiltroCuentaTx] = useState('todas')
+  const [cuentaPorCuenta, setCuentaPorCuenta] = useState('Banorte')
   const [inputAsignado, setInputAsignado] = useState({}) // { [cat.id]: string }
   const [showSettings, setShowSettings] = useState(false)
   const [showReconciliar, setShowReconciliar] = useState(false)
@@ -670,13 +672,17 @@ export default function App({ session, onSignOut }) {
 
       {/* TABS */}
       <div style={{ display: 'flex', padding: '0 28px', background: '#fff', borderBottom: '2px solid #c7d2fe' }}>
-        {['presupuesto', 'transacciones'].map(tab => (
-          <div key={tab} onClick={() => setActiveTab(tab)} style={{
+        {[
+          { id: 'presupuesto', label: 'Presupuesto' },
+          { id: 'transacciones', label: 'Transacciones' },
+          { id: 'por_cuenta', label: 'Por cuenta' },
+        ].map(tab => (
+          <div key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
             padding: '12px 18px', fontSize: 13, fontWeight: 500, cursor: 'pointer',
-            color: activeTab === tab ? '#4f46e5' : '#94a3b8',
-            borderBottom: activeTab === tab ? '2px solid #4f46e5' : '2px solid transparent',
-            textTransform: 'capitalize', userSelect: 'none'
-          }}>{tab}</div>
+            color: activeTab === tab.id ? '#4f46e5' : '#94a3b8',
+            borderBottom: activeTab === tab.id ? '2px solid #4f46e5' : '2px solid transparent',
+            userSelect: 'none'
+          }}>{tab.label}</div>
         ))}
       </div>
 
@@ -1051,27 +1057,38 @@ export default function App({ session, onSignOut }) {
         )}
 
         {/* ── TAB: TRANSACCIONES ── */}
-        {activeTab === 'transacciones' && (
+        {activeTab === 'transacciones' && (() => {
+          const txsFiltradas = filtroCuentaTx === 'todas'
+            ? transacciones
+            : transacciones.filter(t => (t.cuenta || 'Banorte') === filtroCuentaTx)
+          return (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <div style={{ fontSize: 13, color: '#475569' }}>{transacciones.length} transacciones</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ fontSize: 13, color: '#475569' }}>{txsFiltradas.length} transacciones{filtroCuentaTx !== 'todas' ? ` en ${filtroCuentaTx}` : ''}</div>
+                <select value={filtroCuentaTx} onChange={e => setFiltroCuentaTx(e.target.value)}
+                  style={{ background: '#f5f7ff', border: '1px solid #c7d2fe', color: '#0f172a', fontSize: 12, padding: '5px 8px', borderRadius: 5, cursor: 'pointer' }}>
+                  <option value="todas">Todas las cuentas</option>
+                  {cuentas.map(c => <option key={c.nombre} value={c.nombre}>{c.nombre}</option>)}
+                </select>
+              </div>
               <label style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', background: '#4f46e5', color: '#fff', border: 'none' }}>
                 ↑ Importar CSV Banorte
                 <input type="file" accept=".csv" onChange={handleCSV} style={{ display: 'none' }} />
               </label>
             </div>
 
-            {transacciones.length === 0 ? (
+            {txsFiltradas.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '48px 24px', color: '#94a3b8' }}>
                 <div style={{ fontSize: 32, marginBottom: 12 }}>📋</div>
-                <p>No hay transacciones este mes.<br />Importa tu CSV de Banorte para comenzar.</p>
+                <p>{transacciones.length === 0 ? <>No hay transacciones este mes.<br />Importa tu CSV de Banorte para comenzar.</> : <>No hay transacciones en {filtroCuentaTx} este mes.</>}</p>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {transacciones.map((tx, idx) => {
+                {txsFiltradas.map((tx) => {
                   // Duplicate detection — ignora transacciones ya marcadas como no-duplicado
-                  const isDuplicate = !tx.no_es_duplicado && transacciones.some((other, otherIdx) =>
-                    otherIdx !== idx &&
+                  const isDuplicate = !tx.no_es_duplicado && transacciones.some(other =>
+                    other.id !== tx.id &&
                     !other.no_es_duplicado &&
                     other.monto === tx.monto &&
                     other.tipo === tx.tipo &&
@@ -1128,7 +1145,102 @@ export default function App({ session, onSignOut }) {
               </div>
             )}
           </>
-        )}
+          )
+        })()}
+
+        {/* ── TAB: POR CUENTA ── */}
+        {activeTab === 'por_cuenta' && (() => {
+          const cuentaSel = cuentas.find(c => c.nombre === cuentaPorCuenta) || cuentas[0]
+          if (!cuentaSel) {
+            return <div style={{ textAlign: 'center', padding: '48px 24px', color: '#94a3b8' }}>No hay cuentas configuradas.</div>
+          }
+          // Transacciones de esta cuenta, ordenadas ASC por fecha (para saldo corriente)
+          const txsCuenta = transacciones
+            .filter(t => (t.cuenta || 'Banorte') === cuentaSel.nombre)
+            .slice()
+            .sort((a, b) => {
+              const cmp = a.fecha.localeCompare(b.fecha)
+              return cmp !== 0 ? cmp : (a.id || 0) - (b.id || 0)
+            })
+          // Saldo corriente: ingreso suma, gasto resta — funciona igual para débito y crédito
+          const saldoInicial = Number(cuentaSel.saldo_inicial) || 0
+          let running = saldoInicial
+          const rows = txsCuenta.map(tx => {
+            const monto = Math.abs(Number(tx.monto))
+            running += tx.tipo === 'ingreso' ? monto : -monto
+            return { tx, balance: running }
+          })
+          const saldoFinal = running
+          const totalIngresosCta = txsCuenta.filter(t => t.tipo === 'ingreso').reduce((s, t) => s + Math.abs(Number(t.monto)), 0)
+          const totalGastosCta = txsCuenta.filter(t => t.tipo === 'gasto').reduce((s, t) => s + Math.abs(Number(t.monto)), 0)
+          return (
+            <>
+              {/* Selector + summary */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+                <select value={cuentaPorCuenta} onChange={e => setCuentaPorCuenta(e.target.value)}
+                  style={{ background: '#f5f7ff', border: '1px solid #c7d2fe', color: '#0f172a', fontSize: 13, padding: '7px 12px', borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}>
+                  {cuentas.map(c => <option key={c.nombre} value={c.nombre}>{c.nombre} {c.tipo === 'credito' ? '(crédito)' : ''}</option>)}
+                </select>
+                <div style={{ fontSize: 13, color: '#475569' }}>{txsCuenta.length} movimientos</div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
+                <div style={{ background: '#fff', padding: 14, borderRadius: 8, border: '1px solid #e0e7ff' }}>
+                  <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Saldo inicial</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, fontWeight: 600, color: saldoInicial < 0 ? '#dc2626' : '#0f172a' }}>{saldoInicial < 0 ? '-' : ''}{fmt(Math.abs(saldoInicial))}</div>
+                </div>
+                <div style={{ background: '#fff', padding: 14, borderRadius: 8, border: '1px solid #e0e7ff' }}>
+                  <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Ingresos</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, fontWeight: 600, color: '#059669' }}>+{fmt(totalIngresosCta)}</div>
+                </div>
+                <div style={{ background: '#fff', padding: 14, borderRadius: 8, border: '1px solid #e0e7ff' }}>
+                  <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Gastos</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, fontWeight: 600, color: '#dc2626' }}>-{fmt(totalGastosCta)}</div>
+                </div>
+                <div style={{ background: '#fff', padding: 14, borderRadius: 8, border: `1px solid ${saldoFinal < 0 ? '#fecaca' : '#bbf7d0'}` }}>
+                  <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Saldo final</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, fontWeight: 600, color: saldoFinal < 0 ? '#dc2626' : '#059669' }}>{saldoFinal < 0 ? '-' : ''}{fmt(Math.abs(saldoFinal))}</div>
+                </div>
+              </div>
+
+              {/* Tabla con saldo corriente */}
+              {rows.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '48px 24px', color: '#94a3b8' }}>
+                  <div style={{ fontSize: 32, marginBottom: 12 }}>📋</div>
+                  <p>No hay movimientos en {cuentaSel.nombre} este mes.</p>
+                </div>
+              ) : (
+                <div style={{ background: '#fff', borderRadius: 8, border: '1px solid #e0e7ff', overflow: 'hidden' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '95px 1fr 120px 130px', gap: 12, padding: '10px 14px', background: '#f5f7ff', borderBottom: '1px solid #e0e7ff', fontSize: 11, color: '#475569', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    <div>Fecha</div>
+                    <div>Concepto</div>
+                    <div style={{ textAlign: 'right' }}>Monto</div>
+                    <div style={{ textAlign: 'right' }}>Saldo</div>
+                  </div>
+                  {rows.map(({ tx, balance }) => (
+                    <div key={tx.id} style={{ display: 'grid', gridTemplateColumns: '95px 1fr 120px 130px', gap: 12, padding: '10px 14px', borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#475569', fontWeight: 500 }}>
+                        {tx.fecha.split('-').reverse().join('/')}
+                      </div>
+                      <div style={{ fontSize: 13, color: '#0f172a', lineHeight: 1.4, wordBreak: 'break-word' }}>
+                        {tx.concepto}
+                        {tx.es_transferencia && (
+                          <span style={{ marginLeft: 6, fontSize: 10, background: '#e0e7ff', color: '#4f46e5', padding: '1px 5px', borderRadius: 3, fontWeight: 600 }}>transferencia</span>
+                        )}
+                      </div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, fontWeight: 600, textAlign: 'right', color: tx.tipo === 'ingreso' ? '#059669' : '#dc2626' }}>
+                        {tx.tipo === 'ingreso' ? '+' : '-'}{fmt(tx.monto)}
+                      </div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, fontWeight: 700, textAlign: 'right', color: balance < 0 ? '#dc2626' : '#0f172a' }}>
+                        {balance < 0 ? '-' : ''}{fmt(Math.abs(balance))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )
+        })()}
       </div>
 
       {/* ── MODALS ── */}
