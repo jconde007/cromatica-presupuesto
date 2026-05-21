@@ -170,52 +170,105 @@ input:focus, select:focus { outline: none; border-color: #4f46e5 !important; }
     padding: 20px !important;
   }
 
-  /* Tabla de presupuesto — agresivamente compacta para caber en iPhone */
-  .budget-table {
-    font-size: 11px;
-    table-layout: fixed;
-    width: 100%;
-  }
-  .budget-table th,
-  .budget-table td {
-    padding: 6px 3px !important;
-    font-size: 10px !important;
-    word-break: break-word;
-  }
-  .budget-table th {
-    font-size: 9px !important;
-  }
-  .budget-table input {
-    width: 100% !important;
-    min-width: 0 !important;
-    padding: 5px 3px !important;
-    font-size: 13px !important;
-    text-align: right;
-  }
-  /* Esconder columna "Objetivo" en la tabla de Gastos para liberar espacio.
-     La tabla de Ingresos NO se toca (lleva la clase extra `budget-table-ingresos`). */
-  .budget-table:not(.budget-table-ingresos) th:nth-child(2),
-  .budget-table:not(.budget-table-ingresos) td:nth-child(2) {
+  /* ── Tabla de Gastos: rediseño tipo CARD en mobile ──
+     Cada fila de categoría se convierte en una tarjeta con nombre arriba
+     y 3 valores (asignado / gastado / disponible) en flex row abajo.
+     Las filas de grupo (con colspan) mantienen su layout normal. */
+
+  /* Ocultar header en mobile — los labels van como ::before en cada celda */
+  .budget-table:not(.budget-table-ingresos) thead {
     display: none;
   }
-  /* Anchura proporcional: Categoría más ancha, números más estrechos */
-  .budget-table:not(.budget-table-ingresos) th:nth-child(1),
-  .budget-table:not(.budget-table-ingresos) td:nth-child(1) {
-    width: 40%;
+
+  /* Cat row: tr con 5 tds (no contiene td[colspan]) → grid 3-col */
+  .budget-table:not(.budget-table-ingresos) tbody tr:not(:has(td[colspan])) {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: auto auto;
+    column-gap: 8px;
+    row-gap: 10px;
+    padding: 14px 12px !important;
+    background: #fff;
+    border-bottom: 1px solid #f1f5ff;
   }
-  .budget-table:not(.budget-table-ingresos) th:nth-child(3),
-  .budget-table:not(.budget-table-ingresos) td:nth-child(3),
-  .budget-table:not(.budget-table-ingresos) th:nth-child(4),
-  .budget-table:not(.budget-table-ingresos) td:nth-child(4),
-  .budget-table:not(.budget-table-ingresos) th:nth-child(5),
-  .budget-table:not(.budget-table-ingresos) td:nth-child(5) {
-    width: 20%;
+
+  /* Celda 1 (Categoría + deadline) → full width arriba */
+  .budget-table:not(.budget-table-ingresos) tbody tr:not(:has(td[colspan])) td:nth-child(1) {
+    grid-column: 1 / -1;
+    padding: 0 !important;
+    text-align: left !important;
   }
-  /* Summary del grupo (asig/gast/obj) — puede envolver libremente, font más chico */
-  .budget-table tr > td[colspan] span:last-child {
-    font-size: 9px !important;
-    text-align: right;
-    max-width: 50%;
+
+  /* Celda 2 (Objetivo) → oculta */
+  .budget-table:not(.budget-table-ingresos) tbody tr:not(:has(td[colspan])) td:nth-child(2) {
+    display: none;
+  }
+
+  /* Celdas 3, 4, 5 → fila inferior, cada una en su columna */
+  .budget-table:not(.budget-table-ingresos) tbody tr:not(:has(td[colspan])) td:nth-child(3),
+  .budget-table:not(.budget-table-ingresos) tbody tr:not(:has(td[colspan])) td:nth-child(4),
+  .budget-table:not(.budget-table-ingresos) tbody tr:not(:has(td[colspan])) td:nth-child(5) {
+    padding: 0 !important;
+    text-align: center !important;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 4px;
+  }
+
+  /* Labels arriba de cada valor */
+  .budget-table:not(.budget-table-ingresos) tbody tr:not(:has(td[colspan])) td:nth-child(3)::before {
+    content: 'Asignado';
+    font-size: 9px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+  }
+  .budget-table:not(.budget-table-ingresos) tbody tr:not(:has(td[colspan])) td:nth-child(4)::before {
+    content: 'Gastado';
+    font-size: 9px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+  }
+  .budget-table:not(.budget-table-ingresos) tbody tr:not(:has(td[colspan])) td:nth-child(5)::before {
+    content: 'Disponible';
+    font-size: 9px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+  }
+
+  /* Input de asignado — más ancho y centrado */
+  .budget-table:not(.budget-table-ingresos) tbody tr:not(:has(td[colspan])) input {
+    width: 100% !important;
+    text-align: center !important;
+    font-size: 15px !important;
+    font-weight: 600 !important;
+    padding: 6px 4px !important;
+  }
+
+  /* Filas de grupo (con td[colspan]) — más compacto, summary más chico */
+  .budget-table:not(.budget-table-ingresos) tbody tr:has(td[colspan]) {
+    background: #f8faff;
+  }
+  .budget-table tbody tr:has(td[colspan]) > td {
+    padding: 10px 12px !important;
+  }
+  .budget-table tbody tr:has(td[colspan]) span:last-child {
+    font-size: 10px !important;
+  }
+
+  /* Tabla de Ingresos: solo padding/font reducido, mantener layout normal */
+  .budget-table-ingresos {
+    font-size: 12px;
+  }
+  .budget-table-ingresos th,
+  .budget-table-ingresos td {
+    padding: 10px 12px !important;
   }
 }
 
