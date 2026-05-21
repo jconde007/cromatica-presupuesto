@@ -2,6 +2,12 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+html, body {
+  /* Evitar scroll horizontal accidental — el contenido que no quepa se ajusta o scrollea internamente */
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
 body {
   background: #eef2ff;
   -webkit-font-smoothing: antialiased;
@@ -164,26 +170,52 @@ input:focus, select:focus { outline: none; border-color: #4f46e5 !important; }
     padding: 20px !important;
   }
 
-  /* Tabla de presupuesto — más compacta, columnas estrechas */
+  /* Tabla de presupuesto — agresivamente compacta para caber en iPhone */
   .budget-table {
-    font-size: 12px;
+    font-size: 11px;
+    table-layout: fixed;
+    width: 100%;
   }
   .budget-table th,
   .budget-table td {
-    padding: 8px 6px !important;
-    font-size: 11px !important;
+    padding: 6px 3px !important;
+    font-size: 10px !important;
+    word-break: break-word;
+  }
+  .budget-table th {
+    font-size: 9px !important;
   }
   .budget-table input {
     width: 100% !important;
     min-width: 0 !important;
-    padding: 6px 4px !important;
-    font-size: 14px !important;
+    padding: 5px 3px !important;
+    font-size: 13px !important;
+    text-align: right;
   }
   /* Esconder columna "Objetivo" en la tabla de Gastos para liberar espacio.
      La tabla de Ingresos NO se toca (lleva la clase extra `budget-table-ingresos`). */
   .budget-table:not(.budget-table-ingresos) th:nth-child(2),
   .budget-table:not(.budget-table-ingresos) td:nth-child(2) {
     display: none;
+  }
+  /* Anchura proporcional: Categoría más ancha, números más estrechos */
+  .budget-table:not(.budget-table-ingresos) th:nth-child(1),
+  .budget-table:not(.budget-table-ingresos) td:nth-child(1) {
+    width: 40%;
+  }
+  .budget-table:not(.budget-table-ingresos) th:nth-child(3),
+  .budget-table:not(.budget-table-ingresos) td:nth-child(3),
+  .budget-table:not(.budget-table-ingresos) th:nth-child(4),
+  .budget-table:not(.budget-table-ingresos) td:nth-child(4),
+  .budget-table:not(.budget-table-ingresos) th:nth-child(5),
+  .budget-table:not(.budget-table-ingresos) td:nth-child(5) {
+    width: 20%;
+  }
+  /* Summary del grupo (asig/gast/obj) — puede envolver libremente, font más chico */
+  .budget-table tr > td[colspan] span:last-child {
+    font-size: 9px !important;
+    text-align: right;
+    max-width: 50%;
   }
 }
 
