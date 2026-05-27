@@ -23,6 +23,7 @@ Repo: `jconde007/cromatica-presupuesto`
 |---------------|---------|----------------------------------------------------|
 | Banorte       | Débito  | Cuenta principal. Import CSV diario/semanal.       |
 | MP Billetera  | Débito  | Import CSV mensual solo para reconciliación.       |
+| Efectivo      | Débito  | Caja chica / efectivo. Movimientos manuales.       |
 | MP Tarjeta    | Crédito | `saldo_inicial` debe ser **negativo**. Gastos manuales. |
 
 `setSaldoInicial` auto-negativiza para cuentas de crédito.

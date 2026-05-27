@@ -12,17 +12,21 @@ function nextMonth(mes) {
 export const CUENTAS_DEFAULT = [
   { nombre: 'Banorte', tipo: 'debito' },
   { nombre: 'MP Billetera', tipo: 'debito' },
+  { nombre: 'Efectivo', tipo: 'debito' },
   { nombre: 'MP Tarjeta', tipo: 'credito' },
 ]
 
 export async function getCuentas(mes) {
   const { data } = await supabase.from('cuentas').select('*').eq('mes', mes)
-  if (!data || data.length === 0) {
-    const rows = CUENTAS_DEFAULT.map(c => ({ ...c, saldo_inicial: 0, mes }))
+  const existentes = new Set((data || []).map(c => c.nombre))
+  // Rellenar cuentas default que falten (incluye meses viejos cuando se agrega una cuenta nueva al sistema)
+  const faltantes = CUENTAS_DEFAULT.filter(c => !existentes.has(c.nombre))
+  if (faltantes.length > 0) {
+    const rows = faltantes.map(c => ({ ...c, saldo_inicial: 0, mes }))
     await supabase.from('cuentas').insert(rows)
-    return rows
+    return [...(data || []), ...rows]
   }
-  return data
+  return data || []
 }
 
 export async function setSaldoInicial(mes, nombre, saldo_inicial) {
