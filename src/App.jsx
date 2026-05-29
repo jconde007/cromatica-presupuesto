@@ -612,6 +612,12 @@ export default function App({ session, onSignOut }) {
     if (!monto || monto <= 0) { notify('⚠️ Ingresa un monto válido'); return }
     if (!formPagar.fecha) { notify('⚠️ Ingresa fecha'); return }
     if (formPagar.cuentaDebito === formPagar.cuentaCredito) { notify('⚠️ Las cuentas deben ser distintas'); return }
+    // Validar que no se pague más del pago disponible (evita "disponible fantasma" en categorías)
+    const pagoDispCC = cuentaInfo[formPagar.cuentaCredito]?.pagoDisponible || 0
+    if (monto > pagoDispCC + 0.01) {
+      notify(`⚠️ Pago disponible es ${fmt(pagoDispCC)}. Para pagar más, primero "Aparta" dinero de categorías.`)
+      return
+    }
     try {
       const mes = formPagar.fecha.substring(0, 7)
       await pagarTarjeta(mes, formPagar.fecha, formPagar.cuentaDebito, formPagar.cuentaCredito, monto)
@@ -1516,6 +1522,15 @@ export default function App({ session, onSignOut }) {
           </select>
         </Field>
         <Field label="Monto ($MXN)"><input type="number" value={formPagar.monto} onChange={e => setFormPagar(p => ({ ...p, monto: e.target.value }))} placeholder="0.00" step="0.01" style={inputStyle} /></Field>
+        {formPagar.cuentaCredito && (() => {
+          const pagoDispCC = cuentaInfo[formPagar.cuentaCredito]?.pagoDisponible || 0
+          return (
+            <div style={{ marginTop: -6, marginBottom: 10, padding: '8px 12px', background: '#f5f7ff', border: '1px solid #c7d2fe', borderRadius: 7, fontSize: 12, color: '#475569' }}>
+              💡 Pago disponible: <strong style={{ fontFamily: 'DM Mono, monospace', color: pagoDispCC > 0 ? '#15803d' : '#94a3b8' }}>{fmt(pagoDispCC)}</strong>
+              {pagoDispCC === 0 && <div style={{ marginTop: 4, fontSize: 11, color: '#92400e' }}>Para pagar más, primero usa "↔ Apartar" para mover dinero de categorías hacia esta tarjeta.</div>}
+            </div>
+          )
+        })()}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
           <button onClick={() => setModalPagar(false)} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: 'none', border: '1px solid #c7d2fe', color: '#475569', cursor: 'pointer' }}>Cancelar</button>
           <button onClick={handlePagar} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: '#dc2626', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Pagar tarjeta</button>
