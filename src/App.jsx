@@ -438,8 +438,8 @@ export default function App({ session, onSignOut }) {
 
   const handleDeleteTx = async (id) => {
     try {
-      await deleteTransaccion(id)
-      notify('Transacción eliminada')
+      const res = await deleteTransaccion(id)
+      notify(res?.deleted > 1 ? `✓ Transferencia eliminada (${res.deleted} transacciones)` : '✓ Transacción eliminada')
       await loadData()
     } catch (e) { notify('Error: ' + e.message) }
   }

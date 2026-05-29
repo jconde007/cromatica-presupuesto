@@ -135,8 +135,32 @@ export async function marcarNoDuplicado(id) {
 }
 
 export async function deleteTransaccion(id) {
+  // Si es una transferencia, borrar también la mitad correspondiente (gasto + ingreso ligados)
+  const { data: tx } = await supabase.from('transacciones').select('*').eq('id', id).single()
+  if (!tx) {
+    const { error } = await supabase.from('transacciones').delete().eq('id', id)
+    if (error) throw error
+    return { deleted: 1 }
+  }
+  if (tx.es_transferencia) {
+    const tipoOpuesto = tx.tipo === 'gasto' ? 'ingreso' : 'gasto'
+    const { data: pair } = await supabase.from('transacciones')
+      .select('id')
+      .eq('mes', tx.mes)
+      .eq('fecha', tx.fecha)
+      .eq('concepto', tx.concepto)
+      .eq('monto', tx.monto)
+      .eq('es_transferencia', true)
+      .eq('tipo', tipoOpuesto)
+      .neq('id', id)
+    const ids = [id, ...(pair || []).map(p => p.id)]
+    const { error } = await supabase.from('transacciones').delete().in('id', ids)
+    if (error) throw error
+    return { deleted: ids.length }
+  }
   const { error } = await supabase.from('transacciones').delete().eq('id', id)
   if (error) throw error
+  return { deleted: 1 }
 }
 
 // ─── RECONCILIACIÓN ──────────────────────────────────────────────────────────
