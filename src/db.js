@@ -7,6 +7,12 @@ function nextMonth(mes) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
+function prevMonth(mes) {
+  const [y, m] = mes.split('-').map(Number)
+  const d = new Date(y, m - 2, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
 // ─── CUENTAS ─────────────────────────────────────────────────────────────────
 
 export const CUENTAS_DEFAULT = [
@@ -206,6 +212,22 @@ export async function setAsignado(mes, categoria, asignado) {
   const { error } = await supabase.from('presupuestos')
     .upsert({ mes, categoria, asignado }, { onConflict: 'mes,categoria' })
   if (error) throw error
+}
+
+// Copia los asignados del mes anterior al mes actual (sobrescribe los valores actuales).
+// Útil al empezar un mes nuevo para no tener que reasignar todo desde cero.
+export async function copiarAsignadosMesAnterior(mes) {
+  const prev = prevMonth(mes)
+  const { data: prevData } = await supabase.from('presupuestos').select('categoria, asignado').eq('mes', prev)
+  if (!prevData || prevData.length === 0) return { copied: 0 }
+  let copied = 0
+  for (const row of prevData) {
+    if (!row.asignado || row.asignado === 0) continue
+    await supabase.from('presupuestos')
+      .upsert({ mes, categoria: row.categoria, asignado: row.asignado }, { onConflict: 'mes,categoria' })
+    copied++
+  }
+  return { copied }
 }
 
 // ─── CLABE CATEGORIAS (APRENDIZAJE) ──────────────────────────────────────────

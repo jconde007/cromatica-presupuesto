@@ -8,7 +8,7 @@ import {
 } from './constants'
 import {
   getPresupuesto, setPresupuesto, getArrastres, cerrarMes,
-  getAsignados, setAsignado,
+  getAsignados, setAsignado, copiarAsignadosMesAnterior,
   getDeadlines, setDeadline,
   getTransacciones, addTransaccion, updateTransaccionCat, deleteTransaccion, marcarNoDuplicado,
   getSaldosCuentas, setSaldoInicial, reconciliar, CUENTAS_DEFAULT,
@@ -350,6 +350,19 @@ export default function App({ session, onSignOut }) {
     } catch (e) { notify('Error: ' + e.message) }
   }
 
+  const handleCopiarAsignados = async () => {
+    if (!confirm(`¿Copiar los asignados del mes anterior a ${formatMonthLabel(currentMonth)}? Esto sobrescribirá los asignados actuales de este mes.`)) return
+    try {
+      const res = await copiarAsignadosMesAnterior(currentMonth)
+      if (res.copied === 0) {
+        notify('⚠️ El mes anterior no tiene asignados que copiar')
+      } else {
+        notify(`✓ Copiados ${res.copied} asignados del mes anterior`)
+      }
+      await loadData()
+    } catch (e) { notify('Error: ' + e.message) }
+  }
+
   const nextMonthKey = (mes) => {
     const [y, m] = mes.split('-').map(Number)
     const d = new Date(y, m, 1)
@@ -676,6 +689,7 @@ export default function App({ session, onSignOut }) {
             ↑ Importar CSV
             <input type="file" accept=".csv" onChange={handleCSV} style={{ display: 'none' }} />
           </label>
+          <button onClick={handleCopiarAsignados} title="Copia los asignados del mes anterior a este mes" style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'none', border: '1px solid #c7d2fe', color: '#475569' }}>↓ Copiar asignados</button>
           <button onClick={handleCerrarMes} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'none', border: '1px solid #c7d2fe', color: '#475569' }}>Cerrar mes →</button>
           <button onClick={() => setShowSettings(true)} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'none', border: '1px solid #c7d2fe', color: '#475569' }}>⚙️</button>
           <button onClick={onSignOut} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'none', border: '1px solid #c7d2fe', color: '#94a3b8' }}>
