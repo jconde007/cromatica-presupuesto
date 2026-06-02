@@ -314,12 +314,14 @@ export default function App({ session, onSignOut }) {
   }
 
   const totalAsignado = Object.values(asignados).reduce((a, b) => a + b, 0)
+  // Arrastres del mes anterior — también consumen "dinero disponible para asignar"
+  const totalArrastre = Object.values(arrastres).reduce((a, b) => a + b, 0)
   // Apartados que vinieron directo del Listo para asignar (no descontaron categoría)
   const apartadosDesdeListo = apartados.filter(a => a.desde_categoria === '__listo__').reduce((s, a) => s + Number(a.monto), 0)
   // Listo para asignar:
-  // = saldo débito + gastos débito - asignado - descubierto en tarjeta - apartados directos
-  // Los apartados desde categorías NO se restan (ya redujeron el asignado de su categoría origen)
-  const paraAsignar = saldoDebito + gastosDebito - totalAsignado - creditDescubiertoTotal - apartadosDesdeListo
+  // = saldo débito + gastos débito - asignado - arrastre - descubierto en tarjeta - apartados directos
+  // El arrastre cuenta como "dinero ya comprometido a categorías" desde el mes anterior
+  const paraAsignar = saldoDebito + gastosDebito - totalAsignado - totalArrastre - creditDescubiertoTotal - apartadosDesdeListo
 
   const overspendCats = catsGasto.filter(c => {
     const real = gastoActual[c.id] || 0
@@ -790,8 +792,8 @@ export default function App({ session, onSignOut }) {
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>En cuentas débito</div>
                 <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{fmt(saldoDebito)}</div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 8, marginBottom: 4 }}>Total asignado</div>
-                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{fmt(totalAsignado)}</div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 8, marginBottom: 4 }}>Total comprometido</div>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{fmt(totalAsignado + totalArrastre)}</div>
               </div>
             </div>
 
