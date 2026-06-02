@@ -111,6 +111,7 @@ export async function cerrarMes(mes, gastoActual) {
       nombre: cta.nombre,
       tipo: cta.tipo,
       saldo_inicial: cta.saldoActual,
+      updated_at: new Date().toISOString(), // marca como reconciliada hoy
     }, { onConflict: 'nombre,mes' })
   }
 }
