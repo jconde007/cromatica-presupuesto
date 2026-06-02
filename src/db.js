@@ -131,6 +131,18 @@ export async function getTransacciones(mes) {
   return data || []
 }
 
+// Datos agregados para reportes — varios meses de una sola query
+export async function getReporteMultiMes(meses) {
+  const [txsRes, cuentasRes] = await Promise.all([
+    supabase.from('transacciones').select('mes, tipo, monto, categoria, cuenta, es_transferencia').in('mes', meses),
+    supabase.from('cuentas').select('mes, nombre, tipo, saldo_inicial').in('mes', meses),
+  ])
+  return {
+    transacciones: txsRes.data || [],
+    cuentas: cuentasRes.data || [],
+  }
+}
+
 export async function addTransaccion(tx) {
   const { rawConcepto, ...txClean } = tx
   const { error } = await supabase.from('transacciones').insert({

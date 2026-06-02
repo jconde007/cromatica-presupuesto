@@ -16,6 +16,7 @@ import {
   getApartadosTarjeta, addApartadoTarjeta, pagarTarjeta,
 } from './db'
 import Settings from './Settings.jsx'
+import Reports from './Reports.jsx'
 import { supabase } from './supabase'
 import './App.css'
 
@@ -694,6 +695,7 @@ export default function App({ session, onSignOut }) {
           { id: 'presupuesto', label: 'Presupuesto' },
           { id: 'transacciones', label: 'Transacciones' },
           { id: 'por_cuenta', label: 'Por cuenta' },
+          { id: 'reportes', label: 'Reportes' },
         ].map(tab => (
           <div key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
             padding: '12px 18px', fontSize: 13, fontWeight: 500, cursor: 'pointer',
@@ -1257,6 +1259,11 @@ export default function App({ session, onSignOut }) {
             </>
           )
         })()}
+
+        {/* ── TAB: REPORTES ── */}
+        {activeTab === 'reportes' && (
+          <Reports currentMonth={currentMonth} catsGasto={catsGasto} />
+        )}
       </div>
 
       {/* ── MODALS ── */}
