@@ -143,6 +143,14 @@ export async function getReporteMultiMes(meses) {
   }
 }
 
+// Detecta los meses con transacciones registradas (útil para reportes: no muestra meses vacíos)
+export async function getMesesConData() {
+  const { data } = await supabase.from('transacciones').select('mes')
+  if (!data) return []
+  const meses = [...new Set(data.map(r => r.mes))].sort()
+  return meses
+}
+
 export async function addTransaccion(tx) {
   const { rawConcepto, ...txClean } = tx
   const { error } = await supabase.from('transacciones').insert({

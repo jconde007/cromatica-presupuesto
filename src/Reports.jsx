@@ -1,19 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
-import { getReporteMultiMes } from './db'
+import { getReporteMultiMes, getMesesConData } from './db'
 import { fmt, formatMonthLabel } from './constants'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function lastNMonths(currentMonth, n) {
-  // Devuelve array ascendente de N meses incluyendo el actual: ['2026-01', ..., '2026-06']
-  const [y, m] = currentMonth.split('-').map(Number)
-  const arr = []
-  for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(y, m - 1 - i, 1)
-    arr.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
-  }
-  return arr
-}
-
 function shortMonthLabel(mesKey) {
   // '2026-06' → 'Jun'
   const [y, m] = mesKey.split('-').map(Number)
@@ -179,18 +168,25 @@ function BarChart({ series, height = 240 }) {
 
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
 export default function Reports({ currentMonth, catsGasto }) {
-  const [mesesRange, setMesesRange] = useState(() => lastNMonths(currentMonth, 6))
+  const [mesesRange, setMesesRange] = useState([])
   const [mesDetalle, setMesDetalle] = useState(currentMonth)
   const [data, setData] = useState({ transacciones: [], cuentas: [] })
   const [loading, setLoading] = useState(true)
 
-  // Asegurar que mes detalle siempre esté en el rango
+  // Detecta los meses con data y arma el rango (últimos 6 con transacciones + mes actual si no está)
   useEffect(() => {
-    setMesesRange(lastNMonths(currentMonth, 6))
-    setMesDetalle(currentMonth)
+    getMesesConData().then(mesesConData => {
+      // Toma los últimos 6 meses con data + asegura que currentMonth esté incluido
+      const set = new Set(mesesConData)
+      set.add(currentMonth)
+      const ordenado = [...set].sort().slice(-6)
+      setMesesRange(ordenado)
+      setMesDetalle(currentMonth)
+    })
   }, [currentMonth])
 
   useEffect(() => {
+    if (mesesRange.length === 0) return
     setLoading(true)
     getReporteMultiMes(mesesRange).then(d => {
       setData(d)
