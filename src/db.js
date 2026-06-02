@@ -93,21 +93,22 @@ export async function cerrarMes(mes, gastoActual) {
   const { data: presData } = await supabase.from('presupuestos').select('categoria, monto, arrastre, asignado').eq('mes', mes)
   if (!presData) return
   const next = nextMonth(mes)
-  const { data: nextData } = await supabase.from('presupuestos').select('categoria, monto, arrastre').eq('mes', next)
-  const nextMap = nextData ? Object.fromEntries(nextData.map(r => [r.categoria, { monto: r.monto, arrastre: r.arrastre || 0 }])) : {}
+  // Para cada categoría: arrastra el sobrante Y copia el asignado al mes siguiente.
+  // Es idempotente: re-cerrar no duplica arrastres (sobrescribe en lugar de sumar).
   for (const row of presData) {
     const gastado = gastoActual[row.categoria] || 0
-    // Sobrante = lo que tenías asignado (dinero real apartado) menos lo que gastaste
-    const asignado = (row.asignado || 0) + (row.arrastre || 0)
-    const sobrante = asignado - gastado
-    if (sobrante > 0) {
-      const existeNext = nextMap[row.categoria]
-      if (existeNext) {
-        await supabase.from('presupuestos').update({ arrastre: (existeNext.arrastre || 0) + sobrante }).eq('mes', next).eq('categoria', row.categoria)
-      } else {
-        await supabase.from('presupuestos').upsert({ mes: next, categoria: row.categoria, monto: DEFAULT_PRESUPUESTO[row.categoria] || 0, arrastre: sobrante }, { onConflict: 'mes,categoria' })
-      }
-    }
+    const totalCubierto = (row.asignado || 0) + (row.arrastre || 0)
+    const sobrante = Math.max(0, totalCubierto - gastado)
+    const asignadoNext = row.asignado || 0
+    // Solo escribir si hay algo que arrastrar o copiar
+    if (sobrante === 0 && asignadoNext === 0) continue
+    await supabase.from('presupuestos').upsert({
+      mes: next,
+      categoria: row.categoria,
+      monto: DEFAULT_PRESUPUESTO[row.categoria] || 0,
+      arrastre: sobrante,
+      asignado: asignadoNext,
+    }, { onConflict: 'mes,categoria' })
   }
   // Pasar saldos de cuentas: saldoActual al fin del mes = saldo_inicial del mes siguiente
   const cuentasFinDeMes = await getSaldosCuentas(mes)
@@ -214,21 +215,6 @@ export async function setAsignado(mes, categoria, asignado) {
   if (error) throw error
 }
 
-// Copia los asignados del mes anterior al mes actual (sobrescribe los valores actuales).
-// Útil al empezar un mes nuevo para no tener que reasignar todo desde cero.
-export async function copiarAsignadosMesAnterior(mes) {
-  const prev = prevMonth(mes)
-  const { data: prevData } = await supabase.from('presupuestos').select('categoria, asignado').eq('mes', prev)
-  if (!prevData || prevData.length === 0) return { copied: 0 }
-  let copied = 0
-  for (const row of prevData) {
-    if (!row.asignado || row.asignado === 0) continue
-    await supabase.from('presupuestos')
-      .upsert({ mes, categoria: row.categoria, asignado: row.asignado }, { onConflict: 'mes,categoria' })
-    copied++
-  }
-  return { copied }
-}
 
 // ─── CLABE CATEGORIAS (APRENDIZAJE) ──────────────────────────────────────────
 
