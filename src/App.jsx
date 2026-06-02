@@ -991,7 +991,6 @@ export default function App({ session, onSignOut }) {
                       const pctObj = obj > 0 ? Math.min(((asignados[cat.id] || 0) / obj) * 100, 100) : 0
                       const barColor = pct >= 100 ? '#ef4444' : pct >= 80 ? '#f97316' : '#3b82f6'
                       const dispColor = disp < 0 ? '#dc2626' : pct >= 80 ? '#d97706' : '#2563eb'
-                      const arrStr = arrastres[cat.id] > 0 ? ` (+${fmt(arrastres[cat.id])} arrastrado)` : ''
                       const dlInfo = getDeadlineInfo(cat.id)
                       const dl = dlInfo?.fecha
                       const dlFreq = dlInfo?.frecuencia || 'unica'
@@ -1009,7 +1008,6 @@ export default function App({ session, onSignOut }) {
                               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
                                 <div style={{ fontSize: 15, fontWeight: 500 }}>
                                   {cat.label}
-                                  {arrStr && <div style={{ fontSize: 11, color: '#059669', fontFamily: 'DM Mono, monospace', marginTop: 2 }}>{arrStr}</div>}
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                   <span onClick={() => { setFormDeadline({ catId: cat.id, catLabel: cat.label, fecha: dl || '', frecuencia: dlFreq }); setModalDeadline(true) }}

@@ -93,21 +93,21 @@ export async function cerrarMes(mes, gastoActual) {
   const { data: presData } = await supabase.from('presupuestos').select('categoria, monto, arrastre, asignado').eq('mes', mes)
   if (!presData) return
   const next = nextMonth(mes)
-  // Para cada categoría: arrastra el sobrante Y copia el asignado al mes siguiente.
+  // Para cada categoría: arrastra el sobrante (dinero que quedó) Y copia el objetivo.
+  // NO copia el asignado — cada mes empiezas en 0 y asignas solo lo que tienes (estilo YNAB clásico).
   // Es idempotente: re-cerrar no duplica arrastres (sobrescribe en lugar de sumar).
   for (const row of presData) {
     const gastado = gastoActual[row.categoria] || 0
     const totalCubierto = (row.asignado || 0) + (row.arrastre || 0)
     const sobrante = Math.max(0, totalCubierto - gastado)
-    const asignadoNext = row.asignado || 0
-    // Solo escribir si hay algo que arrastrar o copiar
-    if (sobrante === 0 && asignadoNext === 0) continue
+    const objetivo = row.monto || DEFAULT_PRESUPUESTO[row.categoria] || 0
+    if (sobrante === 0 && objetivo === 0) continue
     await supabase.from('presupuestos').upsert({
       mes: next,
       categoria: row.categoria,
-      monto: DEFAULT_PRESUPUESTO[row.categoria] || 0,
+      monto: objetivo,
       arrastre: sobrante,
-      asignado: asignadoNext,
+      asignado: 0, // empezar limpio cada mes
     }, { onConflict: 'mes,categoria' })
   }
   // Pasar saldos de cuentas: saldoActual al fin del mes = saldo_inicial del mes siguiente
