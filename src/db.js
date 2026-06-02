@@ -103,6 +103,16 @@ export async function cerrarMes(mes, gastoActual) {
       }
     }
   }
+  // Pasar saldos de cuentas: saldoActual al fin del mes = saldo_inicial del mes siguiente
+  const cuentasFinDeMes = await getSaldosCuentas(mes)
+  for (const cta of cuentasFinDeMes) {
+    await supabase.from('cuentas').upsert({
+      mes: next,
+      nombre: cta.nombre,
+      tipo: cta.tipo,
+      saldo_inicial: cta.saldoActual,
+    }, { onConflict: 'nombre,mes' })
+  }
 }
 
 // ─── TRANSACCIONES ────────────────────────────────────────────────────────────
