@@ -25,7 +25,13 @@ export const CUENTAS_DEFAULT = [
 export async function getCuentas(mes) {
   const { data } = await supabase.from('cuentas').select('*').eq('mes', mes)
   const existentes = new Set((data || []).map(c => c.nombre))
-  // Rellenar cuentas default que falten (incluye meses viejos cuando se agrega una cuenta nueva al sistema)
+  // Solo auto-rellenar cuentas para el mes actual o pasados.
+  // Para meses futuros, no creamos data — esos meses solo se llenan via cerrarMes.
+  const today = new Date()
+  const mesActual = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+  if (mes > mesActual) {
+    return data || []
+  }
   const faltantes = CUENTAS_DEFAULT.filter(c => !existentes.has(c.nombre))
   if (faltantes.length > 0) {
     const rows = faltantes.map(c => ({ ...c, saldo_inicial: 0, mes }))
