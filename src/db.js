@@ -95,20 +95,30 @@ export async function cerrarMes(mes, gastoActual) {
   const next = nextMonth(mes)
   // Para cada categoría: arrastra el sobrante (dinero que quedó) Y copia el objetivo.
   // NO copia el asignado — cada mes empiezas en 0 y asignas solo lo que tienes (estilo YNAB clásico).
-  // Es idempotente: re-cerrar no duplica arrastres (sobrescribe en lugar de sumar).
+  // Idempotente: al re-cerrar, los arrastres se RECALCULAN (incluso a 0). Si junio ya
+  // tiene asignados manuales, los preservamos (solo actualizamos arrastre y objetivo).
+  const { data: nextRows } = await supabase.from('presupuestos').select('categoria').eq('mes', next)
+  const nextSet = new Set((nextRows || []).map(r => r.categoria))
   for (const row of presData) {
     const gastado = gastoActual[row.categoria] || 0
     const totalCubierto = (row.asignado || 0) + (row.arrastre || 0)
     const sobrante = Math.max(0, totalCubierto - gastado)
     const objetivo = row.monto || DEFAULT_PRESUPUESTO[row.categoria] || 0
-    if (sobrante === 0 && objetivo === 0) continue
-    await supabase.from('presupuestos').upsert({
-      mes: next,
-      categoria: row.categoria,
-      monto: objetivo,
-      arrastre: sobrante,
-      asignado: 0, // empezar limpio cada mes
-    }, { onConflict: 'mes,categoria' })
+    if (nextSet.has(row.categoria)) {
+      // Ya existe en junio — solo actualizar arrastre y objetivo, preservar asignado del usuario
+      await supabase.from('presupuestos')
+        .update({ arrastre: sobrante, monto: objetivo })
+        .eq('mes', next).eq('categoria', row.categoria)
+    } else if (sobrante > 0 || objetivo > 0) {
+      // No existe — insertar limpio con asignado=0
+      await supabase.from('presupuestos').insert({
+        mes: next,
+        categoria: row.categoria,
+        monto: objetivo,
+        arrastre: sobrante,
+        asignado: 0,
+      })
+    }
   }
   // Pasar saldos de cuentas: saldoActual al fin del mes = saldo_inicial del mes siguiente
   const cuentasFinDeMes = await getSaldosCuentas(mes)
