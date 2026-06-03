@@ -571,6 +571,9 @@ export default function App({ session, onSignOut }) {
         await setAsignado(currentMonth, formMover.hacia, asigHacia + monto)
       } else {
         const asigDesde = asignados[formMover.desde] || 0
+        const arrDesde = arrastres[formMover.desde] || 0
+        const dispDesde = asigDesde + arrDesde - (gastoActual[formMover.desde] || 0)
+        if (monto > dispDesde) { notify(`⚠️ Solo hay ${fmt(dispDesde)} disponible en esa categoría`); return }
         setAsignados(prev => ({ ...prev, [formMover.desde]: asigDesde - monto, [formMover.hacia]: asigHacia + monto }))
         await Promise.all([
           setAsignado(currentMonth, formMover.desde, asigDesde - monto),
@@ -593,7 +596,8 @@ export default function App({ session, onSignOut }) {
       if (monto > paraAsignar) { notify(`⚠️ Solo tienes ${fmt(paraAsignar)} disponible para asignar`); return }
     } else {
       const asigDesde = asignados[formApartar.desde] || 0
-      const dispDesde = asigDesde - (gastoActual[formApartar.desde] || 0)
+      const arrDesde = arrastres[formApartar.desde] || 0
+      const dispDesde = asigDesde + arrDesde - (gastoActual[formApartar.desde] || 0)
       if (monto > dispDesde) { notify(`⚠️ Solo hay ${fmt(dispDesde)} disponible en esa categoría`); return }
     }
     try {
@@ -1341,8 +1345,8 @@ export default function App({ session, onSignOut }) {
           <select value={formMover.desde} onChange={e => setFormMover(p => ({ ...p, desde: e.target.value }))} style={selectStyle}>
             <option value="">— Selecciona —</option>
             {paraAsignar > 0 && <option value="__listo__">💰 Listo para asignar — disponible: {fmt(paraAsignar)}</option>}
-            {catsGasto.filter(c => (asignados[c.id] || 0) - (gastoActual[c.id] || 0) > 0).map(c => {
-              const disp = (asignados[c.id] || 0) - (gastoActual[c.id] || 0)
+            {catsGasto.filter(c => (asignados[c.id] || 0) + (arrastres[c.id] || 0) - (gastoActual[c.id] || 0) > 0).map(c => {
+              const disp = (asignados[c.id] || 0) + (arrastres[c.id] || 0) - (gastoActual[c.id] || 0)
               return <option key={c.id} value={c.id}>{c.label} — disponible: {fmt(disp)}</option>
             })}
           </select>
@@ -1368,8 +1372,8 @@ export default function App({ session, onSignOut }) {
           <select value={formApartar.desde} onChange={e => setFormApartar(p => ({ ...p, desde: e.target.value }))} style={selectStyle}>
             <option value="">— Selecciona —</option>
             {paraAsignar > 0 && <option value="__listo__">💰 Listo para asignar — disponible: {fmt(paraAsignar)}</option>}
-            {catsGasto.filter(c => c.id !== 'PagoMPTarjeta' && c.id !== 'PagoTDCMercadopago' && (asignados[c.id] || 0) - (gastoActual[c.id] || 0) > 0).map(c => {
-              const disp = (asignados[c.id] || 0) - (gastoActual[c.id] || 0)
+            {catsGasto.filter(c => c.id !== 'PagoMPTarjeta' && c.id !== 'PagoTDCMercadopago' && (asignados[c.id] || 0) + (arrastres[c.id] || 0) - (gastoActual[c.id] || 0) > 0).map(c => {
+              const disp = (asignados[c.id] || 0) + (arrastres[c.id] || 0) - (gastoActual[c.id] || 0)
               return <option key={c.id} value={c.id}>{c.label} — disponible: {fmt(disp)}</option>
             })}
           </select>
