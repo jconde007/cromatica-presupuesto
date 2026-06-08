@@ -233,8 +233,10 @@ export async function reconciliar(mes, nombre, saldoReal) {
   const cuentas = await getSaldosCuentas(mes)
   const cuenta = cuentas.find(c => c.nombre === nombre)
   if (!cuenta) return null
-  const diferencia = saldoReal - cuenta.saldoActual
   const tipo = CUENTAS_DEFAULT.find(c => c.nombre === nombre)?.tipo || 'debito'
+  // Para crédito: la deuda real siempre se guarda negativa, independientemente de cómo la metió el usuario
+  const saldoRealNormalizado = tipo === 'credito' ? -Math.abs(saldoReal) : saldoReal
+  const diferencia = saldoRealNormalizado - cuenta.saldoActual
   if (Math.abs(diferencia) > 0.01) {
     await supabase.from('cuentas').upsert({
       mes, nombre, tipo,
