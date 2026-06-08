@@ -477,31 +477,34 @@ export default function App({ session, onSignOut }) {
     return parseFmt(val)
   }
 
+  // El input de Asignado opera sobre el TOTAL = asignado del mes + arrastre del mes anterior.
+  // Al editar, calculamos el delta y lo aplicamos:
+  //  - delta > 0: aumenta el asignado del mes (arrastre intacto)
+  //  - delta < 0: consume primero el arrastre, luego el asignado
   const handleAsignado = async (cat, val) => {
     const current = asignados[cat] || 0
     const arrCurrent = arrastres[cat] || 0
-    const str = String(val).trim().replace(/,/g, '')
-    // Caso especial: "-X" siempre consume primero el arrastre del mes anterior
-    const restaMatch = str.match(/^-(\d+\.?\d*)$/)
-    if (restaMatch && arrCurrent > 0) {
-      const cantidad = parseFloat(restaMatch[1])
-      const arrConsumido = Math.min(cantidad, arrCurrent)
-      const asigConsumido = cantidad - arrConsumido
-      const newArr = arrCurrent - arrConsumido
-      const newAsig = Math.max(0, current - asigConsumido)
-      setAsignados(prev => ({ ...prev, [cat]: newAsig }))
-      setArrastres(prev => ({ ...prev, [cat]: newArr }))
-      try {
-        const ops = [setAsignado(currentMonth, cat, newAsig), setArrastre(currentMonth, cat, newArr)]
-        await Promise.all(ops)
-      } catch (e) { notify('Error guardando: ' + e.message) }
-      return
+    const totalCurrent = current + arrCurrent
+    const newTotal = Math.max(0, calcAsignado(val, totalCurrent))
+    const delta = newTotal - totalCurrent
+    let newAsig = current
+    let newArr = arrCurrent
+    if (delta >= 0) {
+      newAsig = current + delta
+    } else {
+      const reducir = -delta
+      const arrConsumido = Math.min(reducir, arrCurrent)
+      const asigConsumido = reducir - arrConsumido
+      newArr = arrCurrent - arrConsumido
+      newAsig = Math.max(0, current - asigConsumido)
     }
-    // Caso normal: solo afecta el asignado del mes
-    const monto = calcAsignado(val, current)
-    setAsignados(prev => ({ ...prev, [cat]: monto }))
-    try { await setAsignado(currentMonth, cat, monto) }
-    catch (e) { notify('Error guardando: ' + e.message) }
+    setAsignados(prev => ({ ...prev, [cat]: newAsig }))
+    setArrastres(prev => ({ ...prev, [cat]: newArr }))
+    try {
+      const ops = [setAsignado(currentMonth, cat, newAsig)]
+      if (newArr !== arrCurrent) ops.push(setArrastre(currentMonth, cat, newArr))
+      await Promise.all(ops)
+    } catch (e) { notify('Error guardando: ' + e.message) }
   }
 
   const handleDeadlineSave = async () => {
@@ -1102,16 +1105,16 @@ export default function App({ session, onSignOut }) {
                           </td>
                           <td style={{ padding: '12px 14px', textAlign: 'right' }}>
                             <input
-                              value={inputAsignado[cat.id] ?? fmtInput(asignados[cat.id] || 0)}
+                              value={inputAsignado[cat.id] ?? fmtInput((asignados[cat.id] || 0) + (arrastres[cat.id] || 0))}
                               onChange={e => setInputAsignado(p => ({ ...p, [cat.id]: e.target.value }))}
-                              onFocus={e => { setInputAsignado(p => ({ ...p, [cat.id]: String(asignados[cat.id] || '') })); setTimeout(() => e.target.select(), 0) }}
+                              onFocus={e => { setInputAsignado(p => ({ ...p, [cat.id]: String((asignados[cat.id] || 0) + (arrastres[cat.id] || 0) || '') })); setTimeout(() => e.target.select(), 0) }}
                               onBlur={e => { handleAsignado(cat.id, e.target.value); setInputAsignado(p => { const n = {...p}; delete n[cat.id]; return n }) }}
                               onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                               style={{ background: asig > 0 ? '#eff6ff' : '#f5f7ff', border: `1px solid ${asig > 0 ? '#93c5fd' : '#c7d2fe'}`, color: '#0f172a', fontFamily: 'DM Mono, monospace', fontSize: 13, textAlign: 'right', padding: '5px 10px', borderRadius: 5, width: 110, fontWeight: asig > 0 ? 600 : 400 }}
                             />
                             {arrastres[cat.id] > 0 && (
                               <div style={{ fontSize: 10, color: '#2563eb', fontFamily: 'DM Mono, monospace', marginTop: 3, textAlign: 'right' }}>
-                                +{fmt(arrastres[cat.id])} mes ant.
+                                incluye +{fmt(arrastres[cat.id])} mes ant.
                               </div>
                             )}
                           </td>
