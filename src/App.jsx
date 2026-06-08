@@ -1073,6 +1073,11 @@ export default function App({ session, onSignOut }) {
                               onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                               style={{ background: asig > 0 ? '#eff6ff' : '#f5f7ff', border: `1px solid ${asig > 0 ? '#93c5fd' : '#c7d2fe'}`, color: '#0f172a', fontFamily: 'DM Mono, monospace', fontSize: 13, textAlign: 'right', padding: '5px 10px', borderRadius: 5, width: 110, fontWeight: asig > 0 ? 600 : 400 }}
                             />
+                            {arrastres[cat.id] > 0 && (
+                              <div style={{ fontSize: 10, color: '#2563eb', fontFamily: 'DM Mono, monospace', marginTop: 3, textAlign: 'right' }}>
+                                +{fmt(arrastres[cat.id])} mes ant.
+                              </div>
+                            )}
                           </td>
                           <td style={{ padding: '12px 14px', textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14 }}>
                             <div>{fmt(real)}</div>
