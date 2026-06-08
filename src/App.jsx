@@ -519,7 +519,7 @@ export default function App({ session, onSignOut }) {
     return next
   }
 
-  // Deadline alerts — categorías con fecha próxima y sin suficiente asignado
+  // Deadline alerts — categorías con fecha próxima y sin suficiente cubierto (asignado + arrastre)
   const hoy = new Date()
   const deadlineAlerts = catsGasto.filter(c => {
     const info = getDeadlineInfo(c.id)
@@ -527,16 +527,16 @@ export default function App({ session, onSignOut }) {
     const dl = getNextDeadline(info.fecha, info.frecuencia)
     if (!dl) return false
     const diasRestantes = Math.ceil((dl - hoy) / 86400000)
-    const asig = asignados[c.id] || 0
+    const cubierto = (asignados[c.id] || 0) + (arrastres[c.id] || 0)
     const obj = presupuesto[c.id] || 0
-    return diasRestantes <= 7 && diasRestantes >= 0 && asig < obj
+    return diasRestantes <= 7 && diasRestantes >= 0 && cubierto < obj
   }).map(c => {
     const info = getDeadlineInfo(c.id)
     const dl = getNextDeadline(info.fecha, info.frecuencia)
     const diasRestantes = Math.ceil((dl - hoy) / 86400000)
-    const asig = asignados[c.id] || 0
+    const cubierto = (asignados[c.id] || 0) + (arrastres[c.id] || 0)
     const obj = presupuesto[c.id] || 0
-    return { ...c, diasRestantes, falta: obj - asig }
+    return { ...c, diasRestantes, falta: obj - cubierto }
   })
 
   const handleUpdateCat = async (id, categoria, concepto) => {
@@ -1021,17 +1021,29 @@ export default function App({ session, onSignOut }) {
                                   {cat.label}
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <span onClick={() => { setFormDeadline({ catId: cat.id, catLabel: cat.label, fecha: dl || '', frecuencia: dlFreq }); setModalDeadline(true) }}
-                                    style={{
-                                      fontSize: 11, cursor: 'pointer', fontWeight: 600,
-                                      color: dl ? (diasDl <= 2 ? '#fff' : diasDl <= 7 ? '#92400e' : '#475569') : '#94a3b8',
-                                      padding: '2px 8px',
-                                      background: dl ? (diasDl <= 2 ? '#dc2626' : diasDl <= 7 ? '#fef3c7' : '#f1f5f9') : '#f8faff',
-                                      border: `1px solid ${dl ? (diasDl <= 2 ? '#dc2626' : diasDl <= 7 ? '#fcd34d' : '#e0e7ff') : '#e0e7ff'}`,
-                                      borderRadius: 5, fontFamily: 'DM Mono, monospace', whiteSpace: 'nowrap'
-                                    }}>
-                                    {dl ? (diasDl < 0 ? '⚠️ vencido' : diasDl === 0 ? `${freqIcon} ¡hoy!` : diasDl === 1 ? `${freqIcon} mañana` : `${freqIcon} ${diasDl}d`) : '📅 fecha'}
-                                  </span>
+                                  {(() => {
+                                    // Si ya alcanzó el objetivo (asignado + arrastre), mostrar "cumplido" en lugar de countdown/vencido
+                                    const cumplido = obj > 0 && ((asignados[cat.id] || 0) + (arrastres[cat.id] || 0)) >= obj
+                                    const dlColor = cumplido ? '#fff'
+                                      : dl ? (diasDl <= 2 ? '#fff' : diasDl <= 7 ? '#92400e' : '#475569') : '#94a3b8'
+                                    const dlBg = cumplido ? '#059669'
+                                      : dl ? (diasDl <= 2 ? '#dc2626' : diasDl <= 7 ? '#fef3c7' : '#f1f5f9') : '#f8faff'
+                                    const dlBorder = cumplido ? '#059669'
+                                      : dl ? (diasDl <= 2 ? '#dc2626' : diasDl <= 7 ? '#fcd34d' : '#e0e7ff') : '#e0e7ff'
+                                    const dlText = cumplido ? '✓ cumplido'
+                                      : dl ? (diasDl < 0 ? '⚠️ vencido' : diasDl === 0 ? `${freqIcon} ¡hoy!` : diasDl === 1 ? `${freqIcon} mañana` : `${freqIcon} ${diasDl}d`) : '📅 fecha'
+                                    return (
+                                      <span onClick={() => { setFormDeadline({ catId: cat.id, catLabel: cat.label, fecha: dl || '', frecuencia: dlFreq }); setModalDeadline(true) }}
+                                        style={{
+                                          fontSize: 11, cursor: 'pointer', fontWeight: 600,
+                                          color: dlColor, padding: '2px 8px', background: dlBg,
+                                          border: `1px solid ${dlBorder}`,
+                                          borderRadius: 5, fontFamily: 'DM Mono, monospace', whiteSpace: 'nowrap'
+                                        }}>
+                                        {dlText}
+                                      </span>
+                                    )
+                                  })()}
                                   {obj > 0 && (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                       <div style={{ width: 44, height: 8, background: '#e0e7ff', borderRadius: 4, overflow: 'hidden' }}>

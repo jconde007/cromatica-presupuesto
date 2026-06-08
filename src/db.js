@@ -95,8 +95,10 @@ export async function setPresupuesto(mes, categoria, monto) {
 }
 
 export async function cerrarMes(mes, gastoActual) {
-  // Traemos presupuestos Y asignados del mes actual
-  const { data: presData } = await supabase.from('presupuestos').select('categoria, monto, arrastre, asignado').eq('mes', mes)
+  // Traemos presupuestos del mes actual (incluye deadline y frecuencia para arrastrar)
+  const { data: presData } = await supabase.from('presupuestos')
+    .select('categoria, monto, arrastre, asignado, deadline, deadline_frecuencia')
+    .eq('mes', mes)
   if (!presData) return
   const next = nextMonth(mes)
   // Para cada categoría: arrastra el sobrante (dinero que quedó) Y copia el objetivo.
@@ -110,12 +112,19 @@ export async function cerrarMes(mes, gastoActual) {
     const totalCubierto = (row.asignado || 0) + (row.arrastre || 0)
     const sobrante = Math.max(0, totalCubierto - gastado)
     const objetivo = row.monto || DEFAULT_PRESUPUESTO[row.categoria] || 0
+    // Arrastrar deadline si es recurrente (mensual/quincenal) o si es única y aún no ha vencido
+    const freq = row.deadline_frecuencia || 'unica'
+    const heredarDeadline = row.deadline && (freq === 'mensual' || freq === 'quincenal' ||
+      (freq === 'unica' && new Date(row.deadline) >= new Date()))
+    const deadlinePayload = heredarDeadline
+      ? { deadline: row.deadline, deadline_frecuencia: freq }
+      : {}
     if (nextSet.has(row.categoria)) {
-      // Ya existe en junio — solo actualizar arrastre y objetivo, preservar asignado del usuario
+      // Ya existe en junio — solo actualizar arrastre, objetivo y deadline. Preservar asignado del usuario.
       await supabase.from('presupuestos')
-        .update({ arrastre: sobrante, monto: objetivo })
+        .update({ arrastre: sobrante, monto: objetivo, ...deadlinePayload })
         .eq('mes', next).eq('categoria', row.categoria)
-    } else if (sobrante > 0 || objetivo > 0) {
+    } else if (sobrante > 0 || objetivo > 0 || heredarDeadline) {
       // No existe — insertar limpio con asignado=0
       await supabase.from('presupuestos').insert({
         mes: next,
@@ -123,6 +132,7 @@ export async function cerrarMes(mes, gastoActual) {
         monto: objetivo,
         arrastre: sobrante,
         asignado: 0,
+        ...deadlinePayload,
       })
     }
   }
