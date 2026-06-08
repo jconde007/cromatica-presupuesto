@@ -479,6 +479,25 @@ export default function App({ session, onSignOut }) {
 
   const handleAsignado = async (cat, val) => {
     const current = asignados[cat] || 0
+    const arrCurrent = arrastres[cat] || 0
+    const str = String(val).trim().replace(/,/g, '')
+    // Caso especial: "-X" siempre consume primero el arrastre del mes anterior
+    const restaMatch = str.match(/^-(\d+\.?\d*)$/)
+    if (restaMatch && arrCurrent > 0) {
+      const cantidad = parseFloat(restaMatch[1])
+      const arrConsumido = Math.min(cantidad, arrCurrent)
+      const asigConsumido = cantidad - arrConsumido
+      const newArr = arrCurrent - arrConsumido
+      const newAsig = Math.max(0, current - asigConsumido)
+      setAsignados(prev => ({ ...prev, [cat]: newAsig }))
+      setArrastres(prev => ({ ...prev, [cat]: newArr }))
+      try {
+        const ops = [setAsignado(currentMonth, cat, newAsig), setArrastre(currentMonth, cat, newArr)]
+        await Promise.all(ops)
+      } catch (e) { notify('Error guardando: ' + e.message) }
+      return
+    }
+    // Caso normal: solo afecta el asignado del mes
     const monto = calcAsignado(val, current)
     setAsignados(prev => ({ ...prev, [cat]: monto }))
     try { await setAsignado(currentMonth, cat, monto) }
