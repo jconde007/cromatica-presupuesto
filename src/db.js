@@ -263,6 +263,12 @@ export async function setAsignado(mes, categoria, asignado) {
   if (error) throw error
 }
 
+export async function setArrastre(mes, categoria, arrastre) {
+  const { error } = await supabase.from('presupuestos')
+    .upsert({ mes, categoria, arrastre }, { onConflict: 'mes,categoria' })
+  if (error) throw error
+}
+
 
 // ─── CLABE CATEGORIAS (APRENDIZAJE) ──────────────────────────────────────────
 

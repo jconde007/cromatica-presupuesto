@@ -8,7 +8,7 @@ import {
 } from './constants'
 import {
   getPresupuesto, setPresupuesto, getArrastres, cerrarMes,
-  getAsignados, setAsignado,
+  getAsignados, setAsignado, setArrastre,
   getDeadlines, setDeadline,
   getTransacciones, addTransaccion, updateTransaccionCat, deleteTransaccion, marcarNoDuplicado,
   getSaldosCuentas, setSaldoInicial, reconciliar, CUENTAS_DEFAULT,
@@ -577,11 +577,19 @@ export default function App({ session, onSignOut }) {
         const arrDesde = arrastres[formMover.desde] || 0
         const dispDesde = asigDesde + arrDesde - (gastoActual[formMover.desde] || 0)
         if (monto > dispDesde) { notify(`⚠️ Solo hay ${fmt(dispDesde)} disponible en esa categoría`); return }
-        setAsignados(prev => ({ ...prev, [formMover.desde]: asigDesde - monto, [formMover.hacia]: asigHacia + monto }))
-        await Promise.all([
-          setAsignado(currentMonth, formMover.desde, asigDesde - monto),
+        // Consumir primero el arrastre, luego el asignado del mes (mantiene asignado >= 0 si es posible)
+        const arrConsumido = Math.min(monto, arrDesde)
+        const asigConsumido = monto - arrConsumido
+        const newArr = arrDesde - arrConsumido
+        const newAsig = asigDesde - asigConsumido
+        setAsignados(prev => ({ ...prev, [formMover.desde]: newAsig, [formMover.hacia]: asigHacia + monto }))
+        setArrastres(prev => ({ ...prev, [formMover.desde]: newArr }))
+        const ops = [
+          setAsignado(currentMonth, formMover.desde, newAsig),
           setAsignado(currentMonth, formMover.hacia, asigHacia + monto),
-        ])
+        ]
+        if (arrConsumido > 0) ops.push(setArrastre(currentMonth, formMover.desde, newArr))
+        await Promise.all(ops)
       }
       setModalMover(false)
       const dLabel = desdeListo ? 'Listo para asignar' : (catsGasto.find(c => c.id === formMover.desde)?.label || formMover.desde)
@@ -606,8 +614,17 @@ export default function App({ session, onSignOut }) {
     try {
       if (!desdeListo) {
         const asigDesde = asignados[formApartar.desde] || 0
-        setAsignados(prev => ({ ...prev, [formApartar.desde]: asigDesde - monto }))
-        await setAsignado(currentMonth, formApartar.desde, asigDesde - monto)
+        const arrDesde = arrastres[formApartar.desde] || 0
+        // Consumir primero arrastre, luego asignado del mes
+        const arrConsumido = Math.min(monto, arrDesde)
+        const asigConsumido = monto - arrConsumido
+        const newArr = arrDesde - arrConsumido
+        const newAsig = asigDesde - asigConsumido
+        setAsignados(prev => ({ ...prev, [formApartar.desde]: newAsig }))
+        setArrastres(prev => ({ ...prev, [formApartar.desde]: newArr }))
+        const ops = [setAsignado(currentMonth, formApartar.desde, newAsig)]
+        if (arrConsumido > 0) ops.push(setArrastre(currentMonth, formApartar.desde, newArr))
+        await Promise.all(ops)
       }
       // Si viene del Listo para asignar, no se descuenta de ninguna categoría;
       // el apartado simplemente reduce el paraAsignar al ser parte del cálculo
