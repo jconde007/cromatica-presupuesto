@@ -317,9 +317,12 @@ export async function getApartadosTarjeta(mes) {
 }
 
 export async function addApartadoTarjeta(mes, cuenta, monto, desdeCategoria) {
-  const { error } = await supabase.from('apartados_tarjeta')
+  const { data, error } = await supabase.from('apartados_tarjeta')
     .insert({ mes, cuenta, monto, desde_categoria: desdeCategoria })
+    .select('id')
+    .single()
   if (error) throw error
+  return data?.id
 }
 
 export async function deleteApartadoTarjeta(id) {

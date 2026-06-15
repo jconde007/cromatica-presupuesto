@@ -13,7 +13,7 @@ import {
   getTransacciones, addTransaccion, updateTransaccionCat, deleteTransaccion, marcarNoDuplicado,
   getSaldosCuentas, setSaldoInicial, reconciliar, CUENTAS_DEFAULT,
   getClabeMap, saveClabe,
-  getApartadosTarjeta, addApartadoTarjeta, pagarTarjeta,
+  getApartadosTarjeta, addApartadoTarjeta, deleteApartadoTarjeta, pagarTarjeta,
 } from './db'
 import Settings from './Settings.jsx'
 import Reports from './Reports.jsx'
@@ -163,6 +163,7 @@ export default function App({ session, onSignOut }) {
   const [showReconciliar, setShowReconciliar] = useState(false)
   const [arrastres, setArrastres] = useState({})
   const [asignados, setAsignados] = useState({})
+  const [undoAction, setUndoAction] = useState(null) // { label, fn, expiresAt }
   const [deadlines, setDeadlines] = useState({})
   const [clabeMap, setClabeMap] = useState({})
   const [modalDeadline, setModalDeadline] = useState(false)
@@ -348,6 +349,24 @@ export default function App({ session, onSignOut }) {
     })
   }
 
+  // Helper para mostrar un toast con opción de deshacer la última acción (auto-cierra en 10s)
+  const showUndo = (label, undoFn) => {
+    const expiresAt = Date.now() + 10000
+    setUndoAction({ label, fn: undoFn, expiresAt })
+    setTimeout(() => {
+      setUndoAction(curr => curr && curr.expiresAt <= Date.now() ? null : curr)
+    }, 10100)
+  }
+
+  const handleUndo = async () => {
+    if (!undoAction) return
+    try {
+      await undoAction.fn()
+      setUndoAction(null)
+      notify('↺ Acción deshecha')
+    } catch (e) { notify('Error al deshacer: ' + e.message) }
+  }
+
   const handleCerrarMes = async () => {
     const next = formatMonthLabel(nextMonthKey(currentMonth))
     if (!confirm(`¿Cerrar ${formatMonthLabel(currentMonth)}?\n\nAl siguiente mes (${next}) se pasarán:\n• Saldos de cada cuenta\n• Asignados de cada categoría\n• Sobrantes como arrastre`)) return
@@ -486,6 +505,7 @@ export default function App({ session, onSignOut }) {
     const arrCurrent = arrastres[cat] || 0
     const totalCurrent = current + arrCurrent
     const newTotal = Math.max(0, calcAsignado(val, totalCurrent))
+    if (Math.abs(newTotal - totalCurrent) < 0.01) return // sin cambio
     const delta = newTotal - totalCurrent
     let newAsig = current
     let newArr = arrCurrent
@@ -504,6 +524,14 @@ export default function App({ session, onSignOut }) {
       const ops = [setAsignado(currentMonth, cat, newAsig)]
       if (newArr !== arrCurrent) ops.push(setArrastre(currentMonth, cat, newArr))
       await Promise.all(ops)
+      const catLabel = catsGasto.find(c => c.id === cat)?.label || cat
+      showUndo(`Asignado modificado en ${catLabel}`, async () => {
+        setAsignados(prev => ({ ...prev, [cat]: current }))
+        setArrastres(prev => ({ ...prev, [cat]: arrCurrent }))
+        const restoreOps = [setAsignado(currentMonth, cat, current)]
+        if (newArr !== arrCurrent) restoreOps.push(setArrastre(currentMonth, cat, arrCurrent))
+        await Promise.all(restoreOps)
+      })
     } catch (e) { notify('Error guardando: ' + e.message) }
   }
 
@@ -587,36 +615,48 @@ export default function App({ session, onSignOut }) {
     if (formMover.desde === formMover.hacia) { notify('⚠️ Origen y destino deben ser distintos'); return }
     if (!monto || monto <= 0) { notify('⚠️ Ingresa un monto válido'); return }
     const desdeListo = formMover.desde === '__listo__'
+    // Capturar estado previo para undo
+    const beforeAsigDesde = desdeListo ? null : (asignados[formMover.desde] || 0)
+    const beforeArrDesde = desdeListo ? null : (arrastres[formMover.desde] || 0)
+    const beforeAsigHacia = asignados[formMover.hacia] || 0
+    const desdeId = formMover.desde
+    const hacia = formMover.hacia
     try {
-      const asigHacia = asignados[formMover.hacia] || 0
+      const asigHacia = beforeAsigHacia
       if (desdeListo) {
-        // Tomar de Listo para asignar: solo aumenta el destino (paraAsignar baja solo porque sube totalAsignado)
         if (monto > paraAsignar) { notify(`⚠️ Solo tienes ${fmt(paraAsignar)} disponible para asignar`); return }
-        setAsignados(prev => ({ ...prev, [formMover.hacia]: asigHacia + monto }))
-        await setAsignado(currentMonth, formMover.hacia, asigHacia + monto)
+        setAsignados(prev => ({ ...prev, [hacia]: asigHacia + monto }))
+        await setAsignado(currentMonth, hacia, asigHacia + monto)
       } else {
-        const asigDesde = asignados[formMover.desde] || 0
-        const arrDesde = arrastres[formMover.desde] || 0
-        const dispDesde = asigDesde + arrDesde - (gastoActual[formMover.desde] || 0)
+        const dispDesde = beforeAsigDesde + beforeArrDesde - (gastoActual[desdeId] || 0)
         if (monto > dispDesde) { notify(`⚠️ Solo hay ${fmt(dispDesde)} disponible en esa categoría`); return }
-        // Consumir primero el arrastre, luego el asignado del mes (mantiene asignado >= 0 si es posible)
-        const arrConsumido = Math.min(monto, arrDesde)
+        const arrConsumido = Math.min(monto, beforeArrDesde)
         const asigConsumido = monto - arrConsumido
-        const newArr = arrDesde - arrConsumido
-        const newAsig = asigDesde - asigConsumido
-        setAsignados(prev => ({ ...prev, [formMover.desde]: newAsig, [formMover.hacia]: asigHacia + monto }))
-        setArrastres(prev => ({ ...prev, [formMover.desde]: newArr }))
+        const newArr = beforeArrDesde - arrConsumido
+        const newAsig = beforeAsigDesde - asigConsumido
+        setAsignados(prev => ({ ...prev, [desdeId]: newAsig, [hacia]: asigHacia + monto }))
+        setArrastres(prev => ({ ...prev, [desdeId]: newArr }))
         const ops = [
-          setAsignado(currentMonth, formMover.desde, newAsig),
-          setAsignado(currentMonth, formMover.hacia, asigHacia + monto),
+          setAsignado(currentMonth, desdeId, newAsig),
+          setAsignado(currentMonth, hacia, asigHacia + monto),
         ]
-        if (arrConsumido > 0) ops.push(setArrastre(currentMonth, formMover.desde, newArr))
+        if (arrConsumido > 0) ops.push(setArrastre(currentMonth, desdeId, newArr))
         await Promise.all(ops)
       }
       setModalMover(false)
-      const dLabel = desdeListo ? 'Listo para asignar' : (catsGasto.find(c => c.id === formMover.desde)?.label || formMover.desde)
-      const hLabel = catsGasto.find(c => c.id === formMover.hacia)?.label || formMover.hacia
+      const dLabel = desdeListo ? 'Listo para asignar' : (catsGasto.find(c => c.id === desdeId)?.label || desdeId)
+      const hLabel = catsGasto.find(c => c.id === hacia)?.label || hacia
       notify(`✓ ${fmt(monto)} movido de ${dLabel} → ${hLabel}`)
+      showUndo(`${fmt(monto)}: ${dLabel} → ${hLabel}`, async () => {
+        setAsignados(prev => ({ ...prev, [hacia]: beforeAsigHacia, ...(desdeListo ? {} : { [desdeId]: beforeAsigDesde }) }))
+        if (!desdeListo) setArrastres(prev => ({ ...prev, [desdeId]: beforeArrDesde }))
+        const restoreOps = [setAsignado(currentMonth, hacia, beforeAsigHacia)]
+        if (!desdeListo) {
+          restoreOps.push(setAsignado(currentMonth, desdeId, beforeAsigDesde))
+          restoreOps.push(setArrastre(currentMonth, desdeId, beforeArrDesde))
+        }
+        await Promise.all(restoreOps)
+      })
     } catch (e) { notify('Error: ' + e.message) }
   }
 
@@ -633,27 +673,38 @@ export default function App({ session, onSignOut }) {
       const dispDesde = asigDesde + arrDesde - (gastoActual[formApartar.desde] || 0)
       if (monto > dispDesde) { notify(`⚠️ Solo hay ${fmt(dispDesde)} disponible en esa categoría`); return }
     }
+    // Capturar estado previo para undo
+    const beforeAsig = desdeListo ? null : (asignados[formApartar.desde] || 0)
+    const beforeArr = desdeListo ? null : (arrastres[formApartar.desde] || 0)
+    const desdeId = formApartar.desde
+    const cuenta = formApartar.cuenta
     try {
       if (!desdeListo) {
-        const asigDesde = asignados[formApartar.desde] || 0
-        const arrDesde = arrastres[formApartar.desde] || 0
-        // Consumir primero arrastre, luego asignado del mes
-        const arrConsumido = Math.min(monto, arrDesde)
+        const arrConsumido = Math.min(monto, beforeArr)
         const asigConsumido = monto - arrConsumido
-        const newArr = arrDesde - arrConsumido
-        const newAsig = asigDesde - asigConsumido
-        setAsignados(prev => ({ ...prev, [formApartar.desde]: newAsig }))
-        setArrastres(prev => ({ ...prev, [formApartar.desde]: newArr }))
-        const ops = [setAsignado(currentMonth, formApartar.desde, newAsig)]
-        if (arrConsumido > 0) ops.push(setArrastre(currentMonth, formApartar.desde, newArr))
+        const newArr = beforeArr - arrConsumido
+        const newAsig = beforeAsig - asigConsumido
+        setAsignados(prev => ({ ...prev, [desdeId]: newAsig }))
+        setArrastres(prev => ({ ...prev, [desdeId]: newArr }))
+        const ops = [setAsignado(currentMonth, desdeId, newAsig)]
+        if (arrConsumido > 0) ops.push(setArrastre(currentMonth, desdeId, newArr))
         await Promise.all(ops)
       }
-      // Si viene del Listo para asignar, no se descuenta de ninguna categoría;
-      // el apartado simplemente reduce el paraAsignar al ser parte del cálculo
-      await addApartadoTarjeta(currentMonth, formApartar.cuenta, monto, desdeListo ? '__listo__' : formApartar.desde)
+      const apartadoId = await addApartadoTarjeta(currentMonth, cuenta, monto, desdeListo ? '__listo__' : desdeId)
       setModalApartar(false)
-      const origenLabel = desdeListo ? 'Listo para asignar' : (catsGasto.find(c => c.id === formApartar.desde)?.label || formApartar.desde)
-      notify(`✓ ${fmt(monto)} apartado de ${origenLabel} → ${formApartar.cuenta}`)
+      const origenLabel = desdeListo ? 'Listo para asignar' : (catsGasto.find(c => c.id === desdeId)?.label || desdeId)
+      notify(`✓ ${fmt(monto)} apartado de ${origenLabel} → ${cuenta}`)
+      showUndo(`Apartado ${fmt(monto)}: ${origenLabel} → ${cuenta}`, async () => {
+        if (apartadoId) await deleteApartadoTarjeta(apartadoId)
+        if (!desdeListo) {
+          setAsignados(prev => ({ ...prev, [desdeId]: beforeAsig }))
+          setArrastres(prev => ({ ...prev, [desdeId]: beforeArr }))
+          await Promise.all([
+            setAsignado(currentMonth, desdeId, beforeAsig),
+            setArrastre(currentMonth, desdeId, beforeArr),
+          ])
+        }
+      })
       await loadData()
     } catch (e) { notify('Error: ' + e.message) }
   }
@@ -1638,6 +1689,26 @@ export default function App({ session, onSignOut }) {
       </Modal>
 
       <Notif msg={notif} onClose={() => setNotif('')} />
+
+      {/* Undo toast — aparece después de operaciones reversibles, auto-cierra en 10s */}
+      {undoAction && (
+        <div style={{
+          position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+          background: '#0f172a', color: '#fff', padding: '12px 16px', borderRadius: 10,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', gap: 14,
+          zIndex: 300, fontSize: 13, maxWidth: '90vw'
+        }}>
+          <span style={{ opacity: 0.9 }}>{undoAction.label}</span>
+          <button onClick={handleUndo} style={{
+            background: '#4f46e5', color: '#fff', border: 'none', padding: '6px 14px',
+            borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 600
+          }}>↺ Deshacer</button>
+          <button onClick={() => setUndoAction(null)} title="Cerrar" style={{
+            background: 'transparent', color: '#94a3b8', border: 'none', cursor: 'pointer',
+            fontSize: 16, padding: '2px 6px'
+          }}>×</button>
+        </div>
+      )}
     </div>
   )
 }
