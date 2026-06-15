@@ -602,6 +602,27 @@ export default function App({ session, onSignOut }) {
     } catch (e) { notify('Error: ' + e.message) }
   }
 
+  const handleDeleteApartado = async (apartado) => {
+    if (!confirm(`¿Deshacer apartado de ${fmt(apartado.monto)}?\n\nEl dinero volverá a la categoría origen y el "Pago disponible" de la tarjeta bajará en ese monto.`)) return
+    try {
+      const beforeAsig = apartado.desde_categoria === '__listo__' ? null : (asignados[apartado.desde_categoria] || 0)
+      const beforeArr = apartado.desde_categoria === '__listo__' ? null : (arrastres[apartado.desde_categoria] || 0)
+      await deleteApartadoTarjeta(apartado.id)
+      // Devolver el dinero a la categoría origen (al asignado del mes)
+      if (apartado.desde_categoria !== '__listo__') {
+        const newAsig = beforeAsig + Number(apartado.monto)
+        setAsignados(prev => ({ ...prev, [apartado.desde_categoria]: newAsig }))
+        await setAsignado(currentMonth, apartado.desde_categoria, newAsig)
+        const catLabel = catsGasto.find(c => c.id === apartado.desde_categoria)?.label || apartado.desde_categoria
+        notify(`✓ ${fmt(apartado.monto)} devueltos a ${catLabel}`)
+      } else {
+        // Si venía de Listo para asignar, simplemente vuelve ahí (paraAsignar lo refleja automáticamente)
+        notify(`✓ ${fmt(apartado.monto)} devueltos a Listo para asignar`)
+      }
+      await loadData()
+    } catch (e) { notify('Error: ' + e.message) }
+  }
+
   const handleMarcarNoDuplicado = async (id) => {
     try {
       await marcarNoDuplicado(id)
@@ -1571,6 +1592,7 @@ export default function App({ session, onSignOut }) {
                         <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, color: '#475569' }}>Fecha</th>
                         <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, color: '#475569' }}>Desde</th>
                         <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600, color: '#475569' }}>Monto</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600, color: '#475569' }}></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1581,6 +1603,11 @@ export default function App({ session, onSignOut }) {
                             <td style={{ padding: '6px 8px', fontFamily: 'DM Mono, monospace', color: '#64748b' }}>{(a.created_at || '').substring(5, 10)}</td>
                             <td style={{ padding: '6px 8px', color: '#475569' }}>{catLabel}</td>
                             <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'DM Mono, monospace', color: '#4f46e5' }}>{fmt(a.monto)}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                              <button onClick={() => handleDeleteApartado(a)}
+                                title="Deshacer apartado — el dinero vuelve a la categoría origen"
+                                style={{ background: 'none', border: '1px solid #fee2e2', color: '#dc2626', padding: '3px 7px', borderRadius: 5, cursor: 'pointer', fontSize: 11 }}>✕</button>
+                            </td>
                           </tr>
                         )
                       })}
