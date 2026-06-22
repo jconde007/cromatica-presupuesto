@@ -333,21 +333,22 @@ export async function deleteApartadoTarjeta(id) {
 // ─── PAGAR TARJETA (TRANSFERENCIA ENTRE CUENTAS) ──────────────────────────────
 
 export async function pagarTarjeta(mes, fecha, cuentaDebito, cuentaCredito, monto) {
-  // Crea dos transacciones marcadas como transferencia para no contaminar ingresos/gastos del mes
-  const concepto = `Pago de ${cuentaCredito} desde ${cuentaDebito}`
+  return transferirEntreCuentas(mes, fecha, cuentaDebito, cuentaCredito, monto, `Pago de ${cuentaCredito} desde ${cuentaDebito}`)
+}
+
+// Transferencia genérica entre dos cuentas (débito o crédito).
+// Crea un par de transacciones marcadas como transferencia para mantener limpios los totales del mes.
+export async function transferirEntreCuentas(mes, fecha, cuentaOrigen, cuentaDestino, monto, concepto) {
+  const conceptoFinal = concepto || `Transferencia de ${cuentaOrigen} a ${cuentaDestino}`
   const txGasto = {
-    mes, fecha, concepto, monto,
-    tipo: 'gasto',
-    categoria: '__transferencia__',
-    cuenta: cuentaDebito,
-    es_transferencia: true,
+    mes, fecha, concepto: conceptoFinal, monto,
+    tipo: 'gasto', categoria: '__transferencia__',
+    cuenta: cuentaOrigen, es_transferencia: true,
   }
   const txIngreso = {
-    mes, fecha, concepto, monto,
-    tipo: 'ingreso',
-    categoria: '__transferencia__',
-    cuenta: cuentaCredito,
-    es_transferencia: true,
+    mes, fecha, concepto: conceptoFinal, monto,
+    tipo: 'ingreso', categoria: '__transferencia__',
+    cuenta: cuentaDestino, es_transferencia: true,
   }
   const { error: e1 } = await supabase.from('transacciones').insert(txGasto)
   if (e1) throw e1

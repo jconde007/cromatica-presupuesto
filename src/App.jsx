@@ -13,7 +13,7 @@ import {
   getTransacciones, addTransaccion, updateTransaccionCat, deleteTransaccion, marcarNoDuplicado,
   getSaldosCuentas, setSaldoInicial, reconciliar, CUENTAS_DEFAULT,
   getClabeMap, saveClabe,
-  getApartadosTarjeta, addApartadoTarjeta, deleteApartadoTarjeta, pagarTarjeta,
+  getApartadosTarjeta, addApartadoTarjeta, deleteApartadoTarjeta, pagarTarjeta, transferirEntreCuentas,
 } from './db'
 import Settings from './Settings.jsx'
 import Reports from './Reports.jsx'
@@ -149,8 +149,10 @@ export default function App({ session, onSignOut }) {
   const [modalApartar, setModalApartar] = useState(false)
   const [modalDetalleTarjeta, setModalDetalleTarjeta] = useState(null) // null o nombre de cuenta
   const [modalPagar, setModalPagar] = useState(false)
+  const [modalTransferir, setModalTransferir] = useState(false)
   const [formApartar, setFormApartar] = useState({ cuenta: '', monto: '', desde: '' })
   const [formPagar, setFormPagar] = useState({ cuentaCredito: '', cuentaDebito: 'Banorte', monto: '', fecha: '' })
+  const [formTransferir, setFormTransferir] = useState({ desde: 'Banorte', hacia: 'MP Billetera', monto: '', fecha: '' })
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('presupuesto')
   const [notif, setNotif] = useState('')
@@ -730,6 +732,20 @@ export default function App({ session, onSignOut }) {
     } catch (e) { notify('Error: ' + e.message) }
   }
 
+  const handleTransferir = async () => {
+    const monto = parseFloat(formTransferir.monto)
+    if (!monto || monto <= 0) { notify('⚠️ Ingresa un monto válido'); return }
+    if (!formTransferir.fecha) { notify('⚠️ Ingresa fecha'); return }
+    if (formTransferir.desde === formTransferir.hacia) { notify('⚠️ Las cuentas deben ser distintas'); return }
+    try {
+      const mes = formTransferir.fecha.substring(0, 7)
+      await transferirEntreCuentas(mes, formTransferir.fecha, formTransferir.desde, formTransferir.hacia, monto)
+      setModalTransferir(false)
+      notify(`✓ Transferiste ${fmt(monto)} de ${formTransferir.desde} → ${formTransferir.hacia}`)
+      await loadData()
+    } catch (e) { notify('Error: ' + e.message) }
+  }
+
   const handlePagar = async () => {
     const monto = parseFloat(formPagar.monto)
     if (!monto || monto <= 0) { notify('⚠️ Ingresa un monto válido'); return }
@@ -795,6 +811,7 @@ export default function App({ session, onSignOut }) {
         <div className="app-header-actions" style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => { setFormIngreso({ fecha: new Date().toISOString().split('T')[0], concepto: '', monto: '', categoria: 'VentasDirectas' }); setModalIngreso(true) }} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'none', border: '1px solid #c7d2fe', color: '#475569' }}>+ Ingreso</button>
           <button onClick={() => { setFormGasto({ fecha: new Date().toISOString().split('T')[0], concepto: '', monto: '', categoria: 'Viniles', cuenta: 'MP Tarjeta' }); setModalGasto(true) }} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'none', border: '1px solid #c7d2fe', color: '#475569' }}>+ Gasto</button>
+          <button onClick={() => { setFormTransferir({ desde: 'Banorte', hacia: 'MP Billetera', monto: '', fecha: new Date().toISOString().split('T')[0] }); setModalTransferir(true) }} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'none', border: '1px solid #c7d2fe', color: '#475569' }}>↔ Transferir</button>
           <label style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', background: '#4f46e5', color: '#fff', border: 'none' }}>
             ↑ Importar CSV
             <input type="file" accept=".csv" onChange={handleCSV} style={{ display: 'none' }} />
@@ -1684,6 +1701,30 @@ export default function App({ session, onSignOut }) {
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
           <button onClick={() => setModalPagar(false)} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: 'none', border: '1px solid #c7d2fe', color: '#475569', cursor: 'pointer' }}>Cancelar</button>
           <button onClick={handlePagar} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: '#dc2626', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Pagar tarjeta</button>
+        </div>
+      </Modal>
+
+      {/* Transferir entre cuentas */}
+      <Modal open={modalTransferir} onClose={() => setModalTransferir(false)} title="Transferir entre cuentas" subtitle="Mueve dinero de una cuenta a otra (registra una transferencia interna sin afectar ingresos/gastos del mes).">
+        <Field label="Fecha"><input type="date" value={formTransferir.fecha} onChange={e => setFormTransferir(p => ({ ...p, fecha: e.target.value }))} style={inputStyle} /></Field>
+        <Field label="Desde cuenta">
+          <select value={formTransferir.desde} onChange={e => setFormTransferir(p => ({ ...p, desde: e.target.value }))} style={selectStyle}>
+            {cuentas.map(c => (
+              <option key={c.nombre} value={c.nombre}>{c.tipo === 'credito' ? '💳 ' : '🏦 '}{c.nombre} — saldo: {fmt(c.saldoActual)}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Hacia cuenta">
+          <select value={formTransferir.hacia} onChange={e => setFormTransferir(p => ({ ...p, hacia: e.target.value }))} style={selectStyle}>
+            {cuentas.map(c => (
+              <option key={c.nombre} value={c.nombre}>{c.tipo === 'credito' ? '💳 ' : '🏦 '}{c.nombre}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Monto ($MXN)"><input type="number" value={formTransferir.monto} onChange={e => setFormTransferir(p => ({ ...p, monto: e.target.value }))} placeholder="0.00" step="0.01" style={inputStyle} /></Field>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
+          <button onClick={() => setModalTransferir(false)} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: 'none', border: '1px solid #c7d2fe', color: '#475569', cursor: 'pointer' }}>Cancelar</button>
+          <button onClick={handleTransferir} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 13, background: '#4f46e5', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Transferir</button>
         </div>
       </Modal>
 
