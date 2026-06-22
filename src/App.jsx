@@ -605,7 +605,7 @@ export default function App({ session, onSignOut }) {
   }
 
   const handleDeleteApartado = async (apartado) => {
-    if (!confirm(`¿Deshacer apartado de ${fmt(apartado.monto)}?\n\nEl dinero volverá a la categoría origen y el "Pago disponible" de la tarjeta bajará en ese monto.`)) return
+    if (!confirm(`¿Deshacer apartado de ${fmt(apartado.monto)}?\n\nEl dinero volverá a la categoría origen y el "Monto reservado para pagar" de la tarjeta bajará en ese monto.`)) return
     try {
       const beforeAsig = apartado.desde_categoria === '__listo__' ? null : (asignados[apartado.desde_categoria] || 0)
       const beforeArr = apartado.desde_categoria === '__listo__' ? null : (arrastres[apartado.desde_categoria] || 0)
@@ -754,7 +754,7 @@ export default function App({ session, onSignOut }) {
     // Validar que no se pague más del pago disponible (evita "disponible fantasma" en categorías)
     const pagoDispCC = cuentaInfo[formPagar.cuentaCredito]?.pagoDisponible || 0
     if (monto > pagoDispCC + 0.01) {
-      notify(`⚠️ Pago disponible es ${fmt(pagoDispCC)}. Para pagar más, primero "Aparta" dinero de categorías.`)
+      notify(`⚠️ Monto reservado para pagar es ${fmt(pagoDispCC)}. Para pagar más, primero "Aparta" dinero de categorías.`)
       return
     }
     try {
@@ -952,7 +952,7 @@ export default function App({ session, onSignOut }) {
                   </div>
                   <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', borderTop: '1px solid #fed7aa', paddingTop: 10 }}>
                     <div style={{ flex: 1, minWidth: 120 }}>
-                      <div style={{ fontSize: 11, color: '#92400e', opacity: 0.7 }}>Pago disponible</div>
+                      <div style={{ fontSize: 11, color: '#92400e', opacity: 0.7 }}>Monto reservado para pagar</div>
                       <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, fontWeight: 700, color: info.pagoDisponible > 0 ? '#15803d' : '#94a3b8' }}>
                         {fmt(info.pagoDisponible)}
                       </div>
@@ -1693,7 +1693,7 @@ export default function App({ session, onSignOut }) {
           const pagoDispCC = cuentaInfo[formPagar.cuentaCredito]?.pagoDisponible || 0
           return (
             <div style={{ marginTop: -6, marginBottom: 10, padding: '8px 12px', background: '#f5f7ff', border: '1px solid #c7d2fe', borderRadius: 7, fontSize: 12, color: '#475569' }}>
-              💡 Pago disponible: <strong style={{ fontFamily: 'DM Mono, monospace', color: pagoDispCC > 0 ? '#15803d' : '#94a3b8' }}>{fmt(pagoDispCC)}</strong>
+              💡 Monto reservado para pagar: <strong style={{ fontFamily: 'DM Mono, monospace', color: pagoDispCC > 0 ? '#15803d' : '#94a3b8' }}>{fmt(pagoDispCC)}</strong>
               {pagoDispCC === 0 && <div style={{ marginTop: 4, fontSize: 11, color: '#92400e' }}>Para pagar más, primero usa "↔ Apartar" para mover dinero de categorías hacia esta tarjeta.</div>}
             </div>
           )
