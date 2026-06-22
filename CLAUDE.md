@@ -137,3 +137,40 @@ Repo: `jconde007/cromatica-presupuesto`
 - Jorge prefiere **explicaciones concretas** y **soluciones accionables**, no teoría abstracta.
 - Cuando algo no funciona, Jorge reporta directo qué ve en pantalla — responder con diagnóstico + fix, no con preguntas en cascada.
 - Si hay duda sobre el estado del archivo, **leer el archivo primero** antes de proponer cambios.
+
+---
+
+## Refactor visual pendiente (Tailwind)
+
+**Cuándo arrancarlo:** después de cerrar al menos un mes sin descuadres ni fixes urgentes. Mientras la lógica financiera se siga ajustando, no es momento de refactor cosmético.
+
+**Scope acordado: nivel medio (~1h de trabajo focused)**
+- Instalar y configurar Tailwind CSS
+- Definir paleta de Cromática en `tailwind.config.js`:
+  - Primario: `#4f46e5` (índigo)
+  - Background: `#eef2ff`
+  - Acentos: `#059669` (verde ingresos), `#dc2626` (rojo gastos)
+  - Tipografía: DM Sans + DM Mono (ya en uso)
+- Migrar `style={{...}}` inline a clases Tailwind en `App.jsx`, `Settings.jsx`, `Reports.jsx`
+- Extraer componentes base: `Button`, `Card`, `Modal`, `Field`, `Input`, `Badge`
+- Portar media queries de `App.css` a utilidades responsive de Tailwind (`sm:`, `md:`)
+
+**Reglas duras del refactor:**
+- NO tocar `db.js` ni lógica de cálculos
+- NO tocar handlers (`handleMover`, `handleAsignado`, etc.)
+- NO cambiar la estructura de tabs ni el flujo de modales
+- Mantener `App.jsx` monolítico (no fragmentar en subcomponentes salvo los base extraídos)
+- Verificar que mobile (iPhone 16 Pro) siga funcionando
+
+**Modo de trabajo recomendado:**
+- Una sola sesión enfocada
+- Jorge hace QA visual conforme Claude deploya
+- Iterar en bugs visuales pequeños hasta dejarlo pulido
+
+**Lo que NO está en scope:**
+- Sidebar de navegación (eso es Opción 3 / rediseño UX completo)
+- Drag & drop, atajos de teclado, animaciones complejas
+- Modo oscuro
+- Inspector panel lateral
+
+Si en el futuro se quiere ir más allá (sidebar, calendario de deadlines, etc.), eso sería una decisión nueva.
