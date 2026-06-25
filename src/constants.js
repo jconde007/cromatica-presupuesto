@@ -99,13 +99,10 @@ export function categorizeAuto(concepto, tipo) {
   return 'GastosVarios'
 }
 
-export function shouldExclude(concepto) {
-  const c = concepto.toUpperCase()
-  return (
-    c.includes('AMERICAN EXPRES') ||
-    c.includes('DISTRIBUIDORA VOLKSW') ||
-    c.includes('VIDEOS VW')
-  )
+export function shouldExclude(_concepto) {
+  // Sin filtros automáticos — todas las transacciones del CSV entran.
+  // Jorge revisa manualmente y borra las que no apliquen.
+  return false
 }
 
 export function fmt(n) {
