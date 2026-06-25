@@ -323,6 +323,11 @@ export default function App({ session, onSignOut }) {
   const totalAsignado = Object.values(asignados).reduce((a, b) => a + b, 0)
   // Arrastres del mes anterior — también consumen "dinero disponible para asignar"
   const totalArrastre = Object.values(arrastres).reduce((a, b) => a + b, 0)
+  // Disponible total en categorías (sum de asignado + arrastre - gastado de cada cat).
+  // Este número SÍ cuadra con el cash: saldoDebito = sum(disponible) + paraAsignar + reservadoTarjeta.
+  const disponibleTotalCats = catsGasto.reduce((s, c) => {
+    return s + (asignados[c.id] || 0) + (arrastres[c.id] || 0) - (gastoActual[c.id] || 0)
+  }, 0)
   // Apartados que vinieron directo del Listo para asignar (no descontaron categoría)
   const apartadosDesdeListo = apartados.filter(a => a.desde_categoria === '__listo__').reduce((s, a) => s + Number(a.monto), 0)
   // Listo para asignar:
@@ -929,8 +934,8 @@ export default function App({ session, onSignOut }) {
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>En cuentas débito</div>
                 <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{fmt(saldoDebito)}</div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 8, marginBottom: 4 }}>Total comprometido</div>
-                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{fmt(totalAsignado + totalArrastre)}</div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 8, marginBottom: 4 }}>Disponible en categorías</div>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{fmt(disponibleTotalCats)}</div>
               </div>
             </div>
 
