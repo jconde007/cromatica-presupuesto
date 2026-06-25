@@ -1061,9 +1061,12 @@ export default function App({ session, onSignOut }) {
             </table>
 
             {/* GASTOS */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '24px 0 8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '24px 0 8px', gap: 12, flexWrap: 'wrap' }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Gastos</div>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <div style={{ fontSize: 12, color: '#475569', fontFamily: 'DM Mono, monospace' }}>
+                  Disponible en cats: <strong style={{ color: disponibleTotalCats < 0 ? '#dc2626' : '#059669' }}>{disponibleTotalCats < 0 ? '-' : ''}{fmt(Math.abs(disponibleTotalCats))}</strong>
+                </div>
                 <button onClick={() => { setFormMover({ desde: '', hacia: '', monto: '' }); setModalMover(true) }} style={{
                   padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer',
                   background: 'none', color: '#4f46e5', border: '1px solid #c7d2fe', transition: 'all 0.15s'
