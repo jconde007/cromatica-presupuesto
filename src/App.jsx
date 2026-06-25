@@ -312,12 +312,24 @@ export default function App({ session, onSignOut }) {
   const apartadosTotales = apartados.reduce((s, a) => s + Number(a.monto), 0)
 
   // Gastos que salieron de cuentas DÉBITO
-  // SÍ contamos transferencias hacia tarjeta (porque ese dinero también salió de débito y bajó el saldo)
+  // SÍ contamos transferencias hacia tarjeta (ese dinero salió de débito y bajó el saldo)
+  // NO contamos transferencias débito↔débito (son movimientos internos, no afectan el cash total)
   let gastosDebito = 0
   for (const tx of transacciones) {
-    if (tx.tipo === 'gasto' && !cuentasCredito.has(tx.cuenta)) {
-      gastosDebito += Math.abs(Number(tx.monto))
+    if (tx.tipo !== 'gasto' || cuentasCredito.has(tx.cuenta)) continue
+    if (tx.es_transferencia) {
+      // Buscar la mitad correspondiente (ingreso con mismo concepto/monto/fecha)
+      const otherHalf = transacciones.find(t =>
+        t.tipo === 'ingreso' && t.es_transferencia &&
+        t.id !== tx.id &&
+        Number(t.monto) === Number(tx.monto) &&
+        t.fecha === tx.fecha &&
+        t.concepto === tx.concepto
+      )
+      // Si la otra mitad cae en débito, es transferencia interna — saltar
+      if (otherHalf && !cuentasCredito.has(otherHalf.cuenta)) continue
     }
+    gastosDebito += Math.abs(Number(tx.monto))
   }
 
   const totalAsignado = Object.values(asignados).reduce((a, b) => a + b, 0)
