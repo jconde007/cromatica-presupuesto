@@ -1208,10 +1208,17 @@ export default function App({ session, onSignOut }) {
                           </td>
                           <td style={{ padding: '12px 14px', textAlign: 'right' }}>
                             <input
-                              defaultValue={fmtInput(obj)}
+                              defaultValue={obj > 0 ? fmtInput(obj) : ''}
+                              placeholder="🎯 meta"
                               onBlur={e => handlePresupuestoChange(cat.id, e.target.value)}
                               onFocus={e => { e.target.value = obj || '' }}
-                              style={{ background: '#f5f7ff', border: '1px solid #c7d2fe', color: '#94a3b8', fontFamily: 'DM Mono, monospace', fontSize: 13, textAlign: 'right', padding: '5px 10px', borderRadius: 5, width: 110 }}
+                              style={{
+                                background: obj > 0 ? '#eef2ff' : '#fff',
+                                border: `1px solid ${obj > 0 ? '#a5b4fc' : '#e0e7ff'}`,
+                                color: obj > 0 ? '#4f46e5' : '#94a3b8',
+                                fontFamily: 'DM Mono, monospace', fontSize: 13, fontWeight: obj > 0 ? 600 : 400,
+                                textAlign: 'right', padding: '5px 10px', borderRadius: 5, width: 110
+                              }}
                             />
                           </td>
                           <td style={{ padding: '12px 14px', textAlign: 'right' }}>
