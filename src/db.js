@@ -147,6 +147,45 @@ export async function cerrarMes(mes, gastoActual) {
       updated_at: new Date().toISOString(), // marca como reconciliada hoy
     }, { onConflict: 'nombre,mes' })
   }
+
+  // Arrastrar el "monto reservado para pagar" de cada tarjeta de crédito.
+  // reservado = cubierto + apartados - pagos. Si al cerrar quedó saldo reservado sin pagar,
+  // se crea un apartado '__cierre__' en el mes siguiente para que el compromiso persista
+  // (si no, ese cash reaparecería como "Listo para asignar" cuando en realidad está comprometido).
+  const cuentasCredito = cuentasFinDeMes.filter(c => c.tipo === 'credito')
+  if (cuentasCredito.length > 0) {
+    const { data: txsMes } = await supabase.from('transacciones')
+      .select('categoria, monto, tipo, cuenta, es_transferencia')
+      .eq('mes', mes)
+    const { data: apartadosMes } = await supabase.from('apartados_tarjeta')
+      .select('cuenta, monto')
+      .eq('mes', mes)
+    const asigMap = Object.fromEntries(presData.map(p => [p.categoria, (p.asignado || 0) + (p.arrastre || 0)]))
+    // Idempotencia: borrar apartados de cierre previos en el mes siguiente antes de recalcular
+    await supabase.from('apartados_tarjeta').delete().eq('mes', next).eq('desde_categoria', '__cierre__')
+    for (const cc of cuentasCredito) {
+      const gastoPorCat = {}
+      for (const t of (txsMes || [])) {
+        if (t.es_transferencia || t.tipo !== 'gasto' || t.cuenta !== cc.nombre) continue
+        gastoPorCat[t.categoria] = (gastoPorCat[t.categoria] || 0) + Math.abs(Number(t.monto))
+      }
+      let cubierto = 0
+      for (const [catId, gasto] of Object.entries(gastoPorCat)) {
+        cubierto += Math.min(gasto, asigMap[catId] || 0)
+      }
+      const apartadosManuales = (apartadosMes || []).filter(a => a.cuenta === cc.nombre).reduce((s, a) => s + Number(a.monto), 0)
+      const pagosHechos = (txsMes || []).filter(t => t.es_transferencia && t.tipo === 'ingreso' && t.cuenta === cc.nombre).reduce((s, t) => s + Number(t.monto), 0)
+      const reservado = Math.max(0, cubierto + apartadosManuales - pagosHechos)
+      if (reservado > 0.01) {
+        await supabase.from('apartados_tarjeta').insert({
+          mes: next,
+          cuenta: cc.nombre,
+          monto: reservado,
+          desde_categoria: '__cierre__',
+        })
+      }
+    }
+  }
 }
 
 // ─── TRANSACCIONES ────────────────────────────────────────────────────────────

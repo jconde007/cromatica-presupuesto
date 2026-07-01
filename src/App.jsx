@@ -340,8 +340,9 @@ export default function App({ session, onSignOut }) {
   const disponibleTotalCats = catsGasto.reduce((s, c) => {
     return s + (asignados[c.id] || 0) + (arrastres[c.id] || 0) - (gastoActual[c.id] || 0)
   }, 0)
-  // Apartados que vinieron directo del Listo para asignar (no descontaron categoría)
-  const apartadosDesdeListo = apartados.filter(a => a.desde_categoria === '__listo__').reduce((s, a) => s + Number(a.monto), 0)
+  // Apartados que vinieron directo del Listo para asignar o heredados del cierre del mes anterior
+  // (no descontaron una categoría, así que reducen directamente el Listo para asignar)
+  const apartadosDesdeListo = apartados.filter(a => a.desde_categoria === '__listo__' || a.desde_categoria === '__cierre__').reduce((s, a) => s + Number(a.monto), 0)
   // Listo para asignar:
   // = saldo débito + gastos débito - asignado - arrastre - descubierto en tarjeta - apartados directos
   // El arrastre cuenta como "dinero ya comprometido a categorías" desde el mes anterior
@@ -623,19 +624,20 @@ export default function App({ session, onSignOut }) {
 
   const handleDeleteApartado = async (apartado) => {
     if (!confirm(`¿Deshacer apartado de ${fmt(apartado.monto)}?\n\nEl dinero volverá a la categoría origen y el "Monto reservado para pagar" de la tarjeta bajará en ese monto.`)) return
+    // '__listo__' y '__cierre__' no descontaron una categoría — al borrarlos el dinero vuelve solo a Listo para asignar
+    const vieneDeListo = apartado.desde_categoria === '__listo__' || apartado.desde_categoria === '__cierre__'
     try {
-      const beforeAsig = apartado.desde_categoria === '__listo__' ? null : (asignados[apartado.desde_categoria] || 0)
-      const beforeArr = apartado.desde_categoria === '__listo__' ? null : (arrastres[apartado.desde_categoria] || 0)
+      const beforeAsig = vieneDeListo ? null : (asignados[apartado.desde_categoria] || 0)
       await deleteApartadoTarjeta(apartado.id)
       // Devolver el dinero a la categoría origen (al asignado del mes)
-      if (apartado.desde_categoria !== '__listo__') {
+      if (!vieneDeListo) {
         const newAsig = beforeAsig + Number(apartado.monto)
         setAsignados(prev => ({ ...prev, [apartado.desde_categoria]: newAsig }))
         await setAsignado(currentMonth, apartado.desde_categoria, newAsig)
         const catLabel = catsGasto.find(c => c.id === apartado.desde_categoria)?.label || apartado.desde_categoria
         notify(`✓ ${fmt(apartado.monto)} devueltos a ${catLabel}`)
       } else {
-        // Si venía de Listo para asignar, simplemente vuelve ahí (paraAsignar lo refleja automáticamente)
+        // Si venía de Listo para asignar (o del cierre), simplemente vuelve ahí (paraAsignar lo refleja automáticamente)
         notify(`✓ ${fmt(apartado.monto)} devueltos a Listo para asignar`)
       }
       await loadData()
@@ -1634,7 +1636,9 @@ export default function App({ session, onSignOut }) {
                     </thead>
                     <tbody>
                       {apartadosCuenta.map((a, i) => {
-                        const catLabel = a.desde_categoria === '__listo__' ? '💰 Listo para asignar' : (catsGasto.find(c => c.id === a.desde_categoria)?.label || a.desde_categoria)
+                        const catLabel = a.desde_categoria === '__listo__' ? '💰 Listo para asignar'
+                          : a.desde_categoria === '__cierre__' ? '🔄 Reservado del mes anterior'
+                          : (catsGasto.find(c => c.id === a.desde_categoria)?.label || a.desde_categoria)
                         return (
                           <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
                             <td style={{ padding: '6px 8px', fontFamily: 'DM Mono, monospace', color: '#64748b' }}>{(a.created_at || '').substring(5, 10)}</td>
